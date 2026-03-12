@@ -32,3 +32,27 @@ def enforce_pronoun_consistency(source_text: str, output_text: str) -> str:
         result = result.replace(formal_you, you)
 
     return result
+
+
+def collapse_duplicate_output(text: str) -> str:
+    """
+    Collapse obvious duplicate output fragments, e.g.:
+    - Two identical lines
+    - Entire content repeated twice with only whitespace between copies
+    """
+    stripped = text.strip()
+    if not stripped:
+        return text
+
+    lines = [line.strip() for line in stripped.splitlines() if line.strip()]
+    if len(lines) >= 2 and all(line == lines[0] for line in lines):
+        return lines[0]
+
+    compact = "".join(stripped.split())
+    if len(compact) % 2 == 0:
+        half = len(compact) // 2
+        if compact[:half] == compact[half:]:
+            # Return first visible line/segment as canonical output.
+            return lines[0] if lines else stripped[: len(stripped) // 2].strip()
+
+    return stripped

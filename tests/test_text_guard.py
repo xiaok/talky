@@ -1,4 +1,4 @@
-from talky.text_guard import enforce_pronoun_consistency
+from talky.text_guard import collapse_duplicate_output, enforce_pronoun_consistency
 
 
 def test_enforce_pronoun_consistency_my_to_your() -> None:
@@ -17,3 +17,11 @@ def test_enforce_pronoun_consistency_preserve_you() -> None:
     corrected = enforce_pronoun_consistency(source, output)
 
     assert "\u4f60\u53ef\u4ee5" in corrected
+
+
+def test_collapse_duplicate_output_repeated_lines() -> None:
+    text = "Do you hear the people sing?\nDo you hear the people sing?\n"
+
+    collapsed = collapse_duplicate_output(text)
+
+    assert collapsed == "Do you hear the people sing?"
