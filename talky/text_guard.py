@@ -17,7 +17,9 @@ def enforce_pronoun_consistency(source_text: str, output_text: str) -> str:
     your = "\u4f60\u7684"
     formal_your = "\u60a8\u7684"
 
-    has_source_you = (you in source) or (formal_you in source)
+    has_informal_you = you in source
+    has_formal_you = formal_you in source
+    has_source_you = has_informal_you or has_formal_you
     has_source_me = me in source
 
     result = output
@@ -27,8 +29,17 @@ def enforce_pronoun_consistency(source_text: str, output_text: str) -> str:
         result = result.replace(formal_your, my).replace(your, my)
         result = result.replace(formal_you, me).replace(you, me)
 
+    # If source is second-person-only, don't let model rewrite to first person.
+    if has_source_you and not has_source_me:
+        if has_formal_you and not has_informal_you:
+            result = result.replace(my, formal_your)
+            result = result.replace(me, formal_you)
+        else:
+            result = result.replace(formal_your, your).replace(my, your)
+            result = result.replace(formal_you, you).replace(me, you)
+
     # If source uses informal second person, avoid formalizing to polite form.
-    if (you in source) and (formal_you not in source):
+    if has_informal_you and not has_formal_you:
         result = result.replace(formal_you, you)
 
     return result
