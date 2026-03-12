@@ -1,7 +1,6 @@
 # Talky
 
 ![Talky Banner](assets/github-banner.png)
-![Talky Launcher Logo](assets/talky-launcher-logo.png)
 
 Talky is a local-first voice input assistant optimized for macOS (Apple Silicon).  
 It captures voice with a hold-to-talk workflow, runs ASR + LLM locally, and outputs polished text into the active app.
