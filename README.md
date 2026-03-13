@@ -5,6 +5,78 @@
 Talky is a local-first voice input assistant optimized for macOS (Apple Silicon).  
 It captures voice with a hold-to-talk workflow, runs ASR + LLM locally, and outputs polished text into the active app.
 
+## Pre-Install Checklist (EN)
+
+Before first launch, please verify:
+
+- Python 3 is available:
+  ```bash
+  python3 --version
+  ```
+- Ollama is installed:
+  ```bash
+  ollama --version
+  ```
+- At least one local Ollama model is available:
+  ```bash
+  ollama list
+  ```
+- Disk space is sufficient (recommended: >= 10 GB free for dependencies + models).
+- Network can reach PyPI and Hugging Face (for first-time dependency/model download).
+- Optional but recommended for faster/stabler first model download:
+  ```bash
+  export HF_TOKEN=your_token_here
+  ```
+- You do not need to create `.venv` manually; `start_talky.command` will create and manage it.
+
+### One-Command Preflight Check (EN)
+
+```bash
+python3 --version && ollama --version && ollama list && \
+echo "Disk free:" && df -h . | tail -n 1
+```
+
+If `ollama list` is empty, pull one model first:
+```bash
+ollama pull <your-model>
+```
+
+## 安装前检查清单（中文）
+
+首次启动前请先确认：
+
+- 已安装 Python 3：
+  ```bash
+  python3 --version
+  ```
+- 已安装 Ollama：
+  ```bash
+  ollama --version
+  ```
+- 本地至少有一个 Ollama 模型：
+  ```bash
+  ollama list
+  ```
+- 磁盘空间充足（建议至少预留 10GB，用于依赖和模型文件）。
+- 网络可访问 PyPI 与 Hugging Face（首次安装依赖与下载模型需要）。
+- 可选但推荐（提升首次下载稳定性/速度）：
+  ```bash
+  export HF_TOKEN=你的token
+  ```
+- 不需要手动创建 `.venv`，`start_talky.command` 会自动创建并管理。
+
+### 一键自检命令（中文）
+
+```bash
+python3 --version && ollama --version && ollama list && \
+echo "Disk free:" && df -h . | tail -n 1
+```
+
+若 `ollama list` 为空，请先拉取任意模型：
+```bash
+ollama pull <your-model>
+```
+
 ## Quick Start on macOS
 
 Prerequisites (install manually first):
@@ -99,6 +171,9 @@ cd /path/to/talky
 ```
 
 You do not need to run `chmod +x` again.
+On each launch, Talky checks for remote git updates first. If updates are
+available, it auto-updates with visible git progress, then starts using the
+latest code.
 
 ### Troubleshooting: Download Interrupted or Warm-up Failed
 
@@ -196,6 +271,7 @@ cd /path/to/talky
 ```
 
 不需要重复执行 `chmod +x`。
+每次启动会先检查远端 Git 更新；若有新版本，会显示更新进度并自动更新后再按最新代码启动。
 
 ### 故障排查：下载中断或预热失败
 

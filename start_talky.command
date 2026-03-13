@@ -6,6 +6,47 @@ cd "$PROJECT_DIR"
 
 echo "==> Talky one-click start"
 
+auto_update_repo() {
+  if ! command -v git >/dev/null 2>&1; then
+    return
+  fi
+  if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    return
+  fi
+  if ! git rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1; then
+    echo "==> No upstream branch configured. Skip auto-update."
+    return
+  fi
+  if ! git diff --quiet || ! git diff --cached --quiet; then
+    echo "==> Local changes detected. Skip auto-update to avoid conflicts."
+    return
+  fi
+
+  echo "==> Checking for updates..."
+  if ! git fetch --progress --prune; then
+    echo "==> Update check failed (network or remote issue). Continue with local code."
+    return
+  fi
+
+  local local_sha upstream_sha
+  local_sha="$(git rev-parse HEAD)"
+  upstream_sha="$(git rev-parse '@{u}')"
+  if [[ "$local_sha" == "$upstream_sha" ]]; then
+    echo "==> Already up to date."
+    return
+  fi
+
+  echo "==> New version found. Updating..."
+  if git pull --ff-only --progress; then
+    echo "==> Update complete. Starting with latest code."
+    return
+  fi
+
+  echo "==> Auto-update failed. Continue with local code."
+}
+
+auto_update_repo
+
 if ! command -v python3 >/dev/null 2>&1; then
   echo "Error: python3 is not installed. Please install Python 3 first."
   exit 1
@@ -25,7 +66,7 @@ export OLLAMA_HOST=http://127.0.0.1:11434
 
 deps_ready() {
   python - <<'PY'
-import importlib
+import importlib.util
 import sys
 
 required = [
