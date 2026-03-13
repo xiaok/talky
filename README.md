@@ -48,6 +48,28 @@ Talky uses your configured model in `~/.talky/settings.json` (`ollama_model`).
 If no model is configured yet, `start_talky.command` will use the first model
 already available in your local `ollama list`.
 
+### Download Speed Tip (Hugging Face)
+
+If you see:
+`Warning: unauthenticated requests to the HF Hub ...`
+
+it means the download is anonymous and may be rate-limited (especially on the
+first Whisper model download, which is large).
+
+Optional acceleration:
+1. Create a Hugging Face access token
+2. Export token before downloading:
+   ```bash
+   export HF_TOKEN=your_token_here
+   ```
+3. Re-run:
+   ```bash
+   python download_model.py
+   ```
+
+You can also try a more stable/faster network and avoid interrupting the first
+download.
+
 ### Permissions (Required on first run)
 
 Talky needs two macOS permissions:
@@ -114,6 +136,26 @@ ollama pull <your-model>
 Talky 会优先使用 `~/.talky/settings.json` 中配置的 `ollama_model`。
 若尚未配置模型，`start_talky.command` 会自动使用你本机 `ollama list`
 里已存在的第一个模型。
+
+### 下载速度提示（Hugging Face）
+
+如果看到：
+`Warning: unauthenticated requests to the HF Hub ...`
+
+表示当前是匿名下载，可能被限速（首次 Whisper 模型下载体积较大）。
+
+可选加速方式：
+1. 在 Hugging Face 创建 Access Token
+2. 下载前设置环境变量：
+   ```bash
+   export HF_TOKEN=你的token
+   ```
+3. 重新执行：
+   ```bash
+   python download_model.py
+   ```
+
+也可以更换更稳定/更快的网络，并尽量避免中途中断首次下载。
 
 ### 首次权限（必须）
 
