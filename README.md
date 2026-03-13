@@ -68,6 +68,28 @@ Without these permissions, recording or auto-paste may fail.
 
 If no focus target is detected, Talky shows a floating copy panel.
 
+### Troubleshooting: Download Interrupted or Warm-up Failed
+
+Symptom:
+- Whisper warm-up fails with errors like `Input must be a zip file...`
+
+Cause:
+- `local_whisper_model` exists, but model files are incomplete (download interrupted).
+
+Fix:
+```bash
+rm -rf local_whisper_model
+source .venv/bin/activate
+python download_model.py
+./start_talky.command
+```
+
+If Ollama warm-up returns `502`, restart Ollama service:
+```bash
+pkill ollama
+ollama serve
+```
+
 ## 首次安装与权限引导（中文）
 
 ### 准备清单
@@ -112,6 +134,28 @@ Talky 首次使用需要两个 macOS 权限：
 5. 确认文本已粘贴到当前聚焦输入框
 
 若没有可用焦点，Talky 会显示悬浮复制面板。
+
+### 故障排查：下载中断或预热失败
+
+现象：
+- Whisper 预热报错（例如 `Input must be a zip file...`）
+
+原因：
+- `local_whisper_model` 目录存在，但模型文件不完整（下载中断）。
+
+处理：
+```bash
+rm -rf local_whisper_model
+source .venv/bin/activate
+python download_model.py
+./start_talky.command
+```
+
+若 Ollama 预热报 `502`，可先重启 Ollama 服务：
+```bash
+pkill ollama
+ollama serve
+```
 
 ## Core Flow
 
