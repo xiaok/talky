@@ -20,6 +20,15 @@ def test_build_llm_prompt_includes_required_rules() -> None:
     assert "Convert spoken style to written style" in prompt
     assert "Output only the cleaned result" in prompt
     assert "Preserve original pronouns and perspective" in prompt
+    assert "Preserve the source language" in prompt
+    assert "Do not translate" in prompt
+    assert "Enforce high scannability" in prompt
+    assert "blank lines between blocks" in prompt
+    assert "clear section headers" in prompt
+    assert "grammatical form consistent" in prompt
+    assert "similar in length" in prompt
+    assert "symptom-cause-action" in prompt
+    assert "ordered or unordered lists" in prompt
     assert "keep one natural paragraph" in prompt
     assert "structure it with short headers" in prompt
     assert "Dictionary is correction-only" in prompt

@@ -30,6 +30,7 @@ Talky 是一个面向 macOS（Apple Silicon）的本地语音输入助手。
 - `ollama list` 至少有一个本地模型
 - 磁盘剩余空间 >= 10GB
 - 网络可访问 PyPI 和 Hugging Face
+- （部分机器）已安装 `ffmpeg`，用于音频解码兼容
 - 可选加速：
   ```bash
   export HF_TOKEN=你的token
@@ -54,7 +55,43 @@ ollama pull <your-model>
 - Python 3
 - Ollama（https://ollama.com/download）
 
-#### 首次安装
+#### Step A（一次性）：系统依赖安装
+
+先安装 Homebrew（若未安装），再安装 ffmpeg。
+
+若你使用本地代理，请先确认你自己的代理端口。下面以 `7897` 为示例：
+
+```bash
+export https_proxy=http://127.0.0.1:7897
+export http_proxy=http://127.0.0.1:7897
+brew install ffmpeg
+```
+
+#### Step B（一次性）：环境修复与模型下载
+
+```bash
+cd /path/to/talky
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+若你使用 SOCKS 代理并出现 `socksio` / 代理报错：
+
+```bash
+pip install "httpx[socks]"
+```
+
+若你通过代理下载模型，可在下载前设置：
+
+```bash
+export HF_ENDPOINT=https://hf-mirror.com
+export HF_TOKEN=你的token
+export all_proxy=socks5://127.0.0.1:7897
+python3 download_model.py
+```
+
+#### Step C（日常）：一键启动
 
 ```bash
 cd /path/to/talky
@@ -71,16 +108,11 @@ chmod +x start_talky.command
 2. 松开等待处理。
 3. 确认文本已粘贴到目标输入框。
 
-#### 后续日常使用
-
-```bash
-cd /path/to/talky
-./start_talky.command
-```
-
 说明：
 - 无需重复执行 `chmod +x`。
 - 启动时会先检查远端更新，有新版本会自动快进更新后再启动。
+- `start_talky.command` 在启动前会清理代理变量，以保证本地 Ollama 连接稳定。
+- 若你所在网络必须代理下载模型，请按 Step B 先手动执行 `download_model.py`。
 
 #### 快速故障排查
 

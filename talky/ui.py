@@ -53,6 +53,7 @@ _ZH = {
     "popup_title": "\u65e0\u53ef\u7528\u7126\u70b9",
     "popup_subtitle": "\u53ef\u590d\u5236\u540e\u624b\u52a8\u7c98\u8d34",
     "copy_close": "\u590d\u5236\u5e76\u5173\u95ed",
+    "settings_subtitle": "\u73bb\u7483\u98ce\u683c\u8bbe\u7f6e\u9762\u677f\uff1a\u8bcd\u5178\uff0c\u6a21\u578b\uff0c\u5f55\u97f3\u53c2\u6570",
 }
 
 
@@ -180,6 +181,7 @@ class SettingsWindow(QWidget):
         self.setWindowTitle("Talky - Settings")
         self.resize(600, 520)
         self._fade_in_animation: QPropertyAnimation | None = None
+        self._form_labels: list[tuple[QLabel, str, str]] = []
 
         self.dictionary_edit = QPlainTextEdit()
         self.dictionary_edit.setPlaceholderText(
@@ -216,30 +218,33 @@ class SettingsWindow(QWidget):
         form.setVerticalSpacing(10)
 
         left_col = [
-            (_tr(self._locale, "Record Hotkey", "hotkey"), self.hotkey_combo),
-            (_tr(self._locale, "Whisper Model", "whisper_model"), self.whisper_model_input),
-            (_tr(self._locale, "ASR Language", "asr_language"), self.language_input),
+            ("Record Hotkey", "hotkey", self.hotkey_combo),
+            ("Whisper Model", "whisper_model", self.whisper_model_input),
+            ("ASR Language", "asr_language", self.language_input),
         ]
         right_col = [
-            (_tr(self._locale, "Ollama Model", "ollama_model"), self.ollama_model_input),
-            (_tr(self._locale, "UI Language", "ui_language"), self.ui_locale_combo),
-            (_tr(self._locale, "Auto Paste Delay", "paste_delay"), self.paste_delay_input),
+            ("Ollama Model", "ollama_model", self.ollama_model_input),
+            ("UI Language", "ui_language", self.ui_locale_combo),
+            ("Auto Paste Delay", "paste_delay", self.paste_delay_input),
             (
-                _tr(self._locale, "LLM Debug Stream", "llm_debug_stream"),
+                "LLM Debug Stream",
+                "llm_debug_stream",
                 self.llm_debug_stream_checkbox,
             ),
         ]
 
-        for row, (label_text, widget) in enumerate(left_col):
-            label = QLabel(label_text)
+        for row, (en_text, key, widget) in enumerate(left_col):
+            label = QLabel(_tr(self._locale, en_text, key))
             label.setObjectName("WindowSubtitle")
             form.addWidget(label, row, 0)
             form.addWidget(widget, row, 1)
-        for row, (label_text, widget) in enumerate(right_col):
-            label = QLabel(label_text)
+            self._form_labels.append((label, en_text, key))
+        for row, (en_text, key, widget) in enumerate(right_col):
+            label = QLabel(_tr(self._locale, en_text, key))
             label.setObjectName("WindowSubtitle")
             form.addWidget(label, row, 2)
             form.addWidget(widget, row, 3)
+            self._form_labels.append((label, en_text, key))
 
         root = QVBoxLayout()
         root.setContentsMargins(20, 20, 20, 20)
@@ -251,19 +256,26 @@ class SettingsWindow(QWidget):
         container_layout.setContentsMargins(22, 22, 22, 22)
         container_layout.setSpacing(14)
 
-        title = QLabel(_tr(self._locale, "Settings", "settings"))
-        title.setObjectName("WindowTitle")
-        subtitle = QLabel("Glassmorphism panel for dictionary, models, and recording.")
-        subtitle.setObjectName("WindowSubtitle")
-        container_layout.addWidget(title)
-        container_layout.addWidget(subtitle)
+        self._title_label = QLabel(_tr(self._locale, "Settings", "settings"))
+        self._title_label.setObjectName("WindowTitle")
+        self._subtitle_label = QLabel(
+            _tr(
+                self._locale,
+                "Glassmorphism panel for dictionary, models, and recording.",
+                "settings_subtitle",
+            )
+        )
+        self._subtitle_label.setObjectName("WindowSubtitle")
+        container_layout.addWidget(self._title_label)
+        container_layout.addWidget(self._subtitle_label)
 
         dictionary_card = self._build_glass_card()
         dictionary_layout = QVBoxLayout(dictionary_card)
         dictionary_layout.setContentsMargins(16, 14, 16, 16)
-        dictionary_layout.addWidget(
-            self._card_title(_tr(self._locale, "Shared Dictionary (ASR + LLM)", "shared_dictionary"))
+        self._dictionary_card_title = self._card_title(
+            _tr(self._locale, "Shared Dictionary (ASR + LLM)", "shared_dictionary")
         )
+        dictionary_layout.addWidget(self._dictionary_card_title)
         self.dictionary_edit.setMinimumHeight(230)
         dictionary_layout.addWidget(self.dictionary_edit)
 
@@ -271,7 +283,10 @@ class SettingsWindow(QWidget):
         settings_card.setMaximumHeight(210)
         settings_layout = QVBoxLayout(settings_card)
         settings_layout.setContentsMargins(16, 14, 16, 14)
-        settings_layout.addWidget(self._card_title(_tr(self._locale, "Base Parameters", "base_params")))
+        self._params_card_title = self._card_title(
+            _tr(self._locale, "Base Parameters", "base_params")
+        )
+        settings_layout.addWidget(self._params_card_title)
         settings_layout.addLayout(form)
 
         container_layout.addWidget(dictionary_card, 1)
@@ -286,10 +301,12 @@ class SettingsWindow(QWidget):
         root.addWidget(container)
         self.setLayout(root)
         self.setStyleSheet(IOS26_STYLESHEET)
+        self.controller.settings_updated.connect(self.load_from_settings)
         self.load_from_settings(self.controller.settings)
 
     def load_from_settings(self, settings: AppSettings) -> None:
         self._locale = settings.ui_locale
+        self._apply_locale_texts()
         self.dictionary_edit.setPlainText("\n".join(settings.custom_dictionary))
         idx = self.hotkey_combo.findData(settings.hotkey)
         self.hotkey_combo.setCurrentIndex(0 if idx < 0 else idx)
@@ -300,6 +317,29 @@ class SettingsWindow(QWidget):
         self.ui_locale_combo.setCurrentIndex(0 if locale_idx < 0 else locale_idx)
         self.paste_delay_input.setValue(settings.auto_paste_delay_ms)
         self.llm_debug_stream_checkbox.setChecked(settings.llm_debug_stream)
+
+    def _apply_locale_texts(self) -> None:
+        self.setWindowTitle(f"Talky - {_tr(self._locale, 'Settings', 'settings')}")
+        self._title_label.setText(_tr(self._locale, "Settings", "settings"))
+        self._subtitle_label.setText(
+            _tr(
+                self._locale,
+                "Glassmorphism panel for dictionary, models, and recording.",
+                "settings_subtitle",
+            )
+        )
+        self._dictionary_card_title.setText(
+            _tr(self._locale, "Shared Dictionary (ASR + LLM)", "shared_dictionary")
+        )
+        self._params_card_title.setText(
+            _tr(self._locale, "Base Parameters", "base_params")
+        )
+        self.save_button.setText(_tr(self._locale, "Save", "save"))
+        self.permission_button.setText(
+            _tr(self._locale, "Check Accessibility", "check_accessibility")
+        )
+        for label, en_text, key in self._form_labels:
+            label.setText(_tr(self._locale, en_text, key))
 
     def _save_settings(self) -> None:
         terms = [
@@ -380,14 +420,14 @@ class TrayApp:
 
         menu = QMenu()
         locale = self.controller.settings.ui_locale
-        open_action = QAction(_tr(locale, "Open Settings", "open_settings"), menu)
-        quit_action = QAction(_tr(locale, "Quit", "quit"), menu)
-        menu.addAction(open_action)
+        self.open_action = QAction(_tr(locale, "Open Settings", "open_settings"), menu)
+        self.quit_action = QAction(_tr(locale, "Quit", "quit"), menu)
+        menu.addAction(self.open_action)
         menu.addSeparator()
-        menu.addAction(quit_action)
+        menu.addAction(self.quit_action)
 
-        open_action.triggered.connect(self.show_settings)
-        quit_action.triggered.connect(self.quit_app)
+        self.open_action.triggered.connect(self.show_settings)
+        self.quit_action.triggered.connect(self.quit_app)
 
         self.tray.setContextMenu(menu)
         self.tray.activated.connect(self._on_tray_activated)
@@ -396,6 +436,7 @@ class TrayApp:
         self.controller.error_signal.connect(self._show_error)
         self.controller.show_result_popup_signal.connect(self._show_result_popup)
         self.controller.show_settings_window_signal.connect(self.show_settings)
+        self.controller.settings_updated.connect(self._on_settings_updated)
 
     def show(self) -> None:
         self.tray.show()
@@ -435,6 +476,11 @@ class TrayApp:
 
     def _show_result_popup(self, text: str) -> None:
         self.result_popup.show_text(text, self.controller.settings.ui_locale)
+
+    def _on_settings_updated(self, settings: AppSettings) -> None:
+        locale = settings.ui_locale
+        self.open_action.setText(_tr(locale, "Open Settings", "open_settings"))
+        self.quit_action.setText(_tr(locale, "Quit", "quit"))
 
 
 class ResultPopupWindow(QWidget):

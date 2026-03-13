@@ -30,6 +30,7 @@ Make sure these are ready before first run:
 - `ollama list` shows at least one local model
 - >= 10 GB free disk space
 - Network can reach PyPI + Hugging Face
+- (Some machines) `ffmpeg` installed for audio decoding compatibility
 - Optional acceleration:
   ```bash
   export HF_TOKEN=your_token_here
@@ -54,7 +55,43 @@ Install prerequisites manually first:
 - Python 3
 - Ollama: https://ollama.com/download
 
-#### First-time setup
+#### Step A (one-time): system dependency setup
+
+Install Homebrew first (if not installed), then install ffmpeg.
+
+If you use a local proxy, first confirm your own proxy port. The commands below use `7897` as an example:
+
+```bash
+export https_proxy=http://127.0.0.1:7897
+export http_proxy=http://127.0.0.1:7897
+brew install ffmpeg
+```
+
+#### Step B (one-time): environment fix + model download
+
+```bash
+cd /path/to/talky
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+If you use SOCKS proxy and see `socksio` / proxy errors:
+
+```bash
+pip install "httpx[socks]"
+```
+
+If you use proxy-based model download, configure it before downloading:
+
+```bash
+export HF_ENDPOINT=https://hf-mirror.com
+export HF_TOKEN=your_token_here
+export all_proxy=socks5://127.0.0.1:7897
+python3 download_model.py
+```
+
+#### Step C (daily): one-click start
 
 ```bash
 cd /path/to/talky
@@ -71,16 +108,11 @@ After startup:
 2. Release to process.
 3. Confirm text is pasted.
 
-#### Daily usage (second run and after)
-
-```bash
-cd /path/to/talky
-./start_talky.command
-```
-
 Notes:
 - No need to run `chmod +x` again.
 - Startup checks remote git updates and fast-forwards when available.
+- `start_talky.command` unsets proxy variables before app launch to keep local Ollama access stable.
+- If your network requires proxy for model download, run `download_model.py` manually (Step B) before daily start.
 
 #### Quick troubleshooting
 
