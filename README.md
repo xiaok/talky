@@ -90,6 +90,16 @@ Without these permissions, recording or auto-paste may fail.
 
 If no focus target is detected, Talky shows a floating copy panel.
 
+### Daily Run (Second Time and After)
+
+After first-time setup is complete, start Talky with:
+```bash
+cd /path/to/talky
+./start_talky.command
+```
+
+You do not need to run `chmod +x` again.
+
 ### Troubleshooting: Download Interrupted or Warm-up Failed
 
 Symptom:
@@ -176,6 +186,16 @@ Talky 首次使用需要两个 macOS 权限：
 5. 确认文本已粘贴到当前聚焦输入框
 
 若没有可用焦点，Talky 会显示悬浮复制面板。
+
+### 日常启动（第二次及以后）
+
+完成首次配置后，后续启动只需执行：
+```bash
+cd /path/to/talky
+./start_talky.command
+```
+
+不需要重复执行 `chmod +x`。
 
 ### 故障排查：下载中断或预热失败
 

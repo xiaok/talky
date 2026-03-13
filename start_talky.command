@@ -18,6 +18,11 @@ fi
 
 source ".venv/bin/activate"
 
+# Force local Ollama path and bypass proxy for localhost access.
+unset http_proxy HTTP_PROXY https_proxy HTTPS_PROXY all_proxy ALL_PROXY
+export NO_PROXY=localhost,127.0.0.1
+export OLLAMA_HOST=http://127.0.0.1:11434
+
 deps_ready() {
   python - <<'PY'
 import importlib
