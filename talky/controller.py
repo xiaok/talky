@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import os
 import threading
 import time
+from urllib.parse import urlparse
 from pathlib import Path
 
 import sounddevice as sd
@@ -42,6 +44,7 @@ class AppController(QObject):
         super().__init__()
         self.config_store = config_store
         self.settings = self.config_store.load()
+        self._apply_ollama_host_env()
 
         self.recorder = AudioRecorder(
             sample_rate=self.settings.sample_rate,
@@ -80,6 +83,7 @@ class AppController(QObject):
 
     def update_settings(self, new_settings: AppSettings) -> None:
         self.settings = new_settings
+        self._apply_ollama_host_env()
         self.config_store.save(new_settings)
         self._rebuild_services()
         self._start_hotkey()
@@ -88,6 +92,7 @@ class AppController(QObject):
         self.status_signal.emit("Settings saved.")
 
     def _rebuild_services(self) -> None:
+        self._apply_ollama_host_env()
         self.recorder = AudioRecorder(
             sample_rate=self.settings.sample_rate,
             channels=self.settings.channels,
@@ -101,6 +106,20 @@ class AppController(QObject):
             debug_stream=self.settings.llm_debug_stream,
         )
         self.paster = ClipboardPaster(paste_delay_ms=self.settings.auto_paste_delay_ms)
+
+    def _apply_ollama_host_env(self) -> None:
+        host = (self.settings.ollama_host or "http://127.0.0.1:11434").strip().rstrip("/")
+        if not host:
+            host = "http://127.0.0.1:11434"
+        os.environ["OLLAMA_HOST"] = host
+
+    def _is_local_ollama_host(self, host: str) -> bool:
+        value = (host or "").strip()
+        if not value:
+            return True
+        parsed = urlparse(value if "://" in value else f"http://{value}")
+        hostname = (parsed.hostname or "").lower()
+        return hostname in {"127.0.0.1", "localhost", "::1"}
 
     def _start_hotkey(self) -> None:
         if self.hotkey:
@@ -152,10 +171,22 @@ class AppController(QObject):
         try:
             ok, error = check_ollama_reachable()
             if not ok:
+                host = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")
+                if self._is_local_ollama_host(host):
+                    guide = (
+                        "\nRun: ollama serve and ensure model exists: "
+                        + self.settings.ollama_model
+                    )
+                else:
+                    guide = (
+                        "\nCheck remote Ollama host and model on: "
+                        + host
+                        + "\nExpected model: "
+                        + self.settings.ollama_model
+                    )
                 raise RuntimeError(
                     error
-                    + "\nRun: ollama serve and ensure model exists: "
-                    + self.settings.ollama_model
+                    + guide
                 )
 
             dictionary_entries = parse_dictionary_entries(self.settings.custom_dictionary)

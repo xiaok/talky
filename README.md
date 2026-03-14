@@ -95,6 +95,10 @@ python3 download_model.py
 
 #### Step C (daily): one-click start
 
+Choose Ollama mode in Settings:
+- Local Ollama: `Ollama Host = http://127.0.0.1:11434`
+- LAN Ollama: `Ollama Host = http://<LAN_IP>:11434`
+
 ```bash
 cd /path/to/talky
 chmod +x start_talky.command
@@ -120,6 +124,8 @@ Notes:
 - Startup checks remote git updates and fast-forwards when available.
 - `start_talky.command` unsets proxy variables before app launch to keep local Ollama access stable.
 - If your network requires proxy for model download, run `download_model.py` manually (Step B) before daily start.
+- In LAN mode, Talky skips local `ollama serve` startup and uses the configured remote host directly.
+- First run helper: if no host is configured and local Ollama is unavailable/no model, startup asks you to choose local vs remote host before model check.
 
 #### Quick troubleshooting
 

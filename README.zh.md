@@ -95,6 +95,10 @@ python3 download_model.py
 
 #### Step C（日常）：一键启动
 
+请先在设置面板里选择 Ollama 模式：
+- 本地 Ollama：`Ollama Host = http://127.0.0.1:11434`
+- 局域网 Ollama：`Ollama Host = http://<局域网IP>:11434`
+
 ```bash
 cd /path/to/talky
 chmod +x start_talky.command
@@ -120,6 +124,8 @@ chmod +x start_talky.command
 - 启动时会先检查远端更新，有新版本会自动快进更新后再启动。
 - `start_talky.command` 在启动前会清理代理变量，以保证本地 Ollama 连接稳定。
 - 若你所在网络必须代理下载模型，请按 Step B 先手动执行 `download_model.py`。
+- 局域网模式下，Talky 会跳过本机 `ollama serve` 启动步骤，直接连接配置的远端地址。
+- 首次引导：若尚未配置 host 且本地 Ollama 不可用/无模型，启动时会先让你选择本地或远端地址，再继续模型检查。
 
 #### 快速故障排查
 

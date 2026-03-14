@@ -10,6 +10,7 @@ class AppSettings:
     hotkey: str = "fn"  # "fn" or "right_option"
     whisper_model: str = "./local_whisper_model"
     ollama_model: str = "qwen3.5:9b"
+    ollama_host: str = "http://127.0.0.1:11434"
     ui_locale: str = "en"  # "en" or "mixed"
     language: str = "zh"
     auto_paste_delay_ms: int = 120
@@ -26,6 +27,7 @@ class AppSettings:
                 data.get("whisper_model", "./local_whisper_model")
             ),
             ollama_model=str(data.get("ollama_model", "qwen3.5:9b")),
+            ollama_host=str(data.get("ollama_host", "http://127.0.0.1:11434")).rstrip("/"),
             ui_locale=str(data.get("ui_locale", "en")),
             language=str(data.get("language", "zh")),
             auto_paste_delay_ms=int(data.get("auto_paste_delay_ms", 120)),

@@ -89,10 +89,151 @@ fi
 
 source ".venv/bin/activate"
 
-# Force local Ollama path and bypass proxy for localhost access.
-unset http_proxy HTTP_PROXY https_proxy HTTPS_PROXY all_proxy ALL_PROXY
-export NO_PROXY=localhost,127.0.0.1
-export OLLAMA_HOST=http://127.0.0.1:11434
+resolve_ollama_host() {
+  python - <<'PY'
+import json
+from pathlib import Path
+
+config_path = Path.home() / ".talky" / "settings.json"
+host = "http://127.0.0.1:11434"
+if config_path.exists():
+    try:
+        data = json.loads(config_path.read_text(encoding="utf-8"))
+        host = str(data.get("ollama_host", host)).strip() or host
+    except Exception:
+        pass
+print(host.rstrip("/"))
+PY
+}
+
+is_local_ollama_host() {
+  python - <<'PY'
+import os
+from urllib.parse import urlparse
+
+host = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434").strip() or "http://127.0.0.1:11434"
+parsed = urlparse(host if "://" in host else f"http://{host}")
+hostname = (parsed.hostname or "").lower()
+print("1" if hostname in {"127.0.0.1", "localhost", "::1"} else "0")
+PY
+}
+
+is_first_run_without_host_config() {
+  python - <<'PY'
+import json
+from pathlib import Path
+
+config_path = Path.home() / ".talky" / "settings.json"
+if not config_path.exists():
+    print("1")
+    raise SystemExit
+try:
+    data = json.loads(config_path.read_text(encoding="utf-8"))
+except Exception:
+    print("1")
+    raise SystemExit
+host = str(data.get("ollama_host", "")).strip()
+print("1" if not host else "0")
+PY
+}
+
+write_ollama_host_config() {
+  local host_value="$1"
+  OLLAMA_HOST_INPUT="$host_value" python - <<'PY'
+import json
+import os
+from pathlib import Path
+from urllib.parse import urlparse
+
+raw = (os.environ.get("OLLAMA_HOST_INPUT", "") or "").strip()
+if not raw:
+    raw = "http://127.0.0.1:11434"
+value = raw if "://" in raw else f"http://{raw}"
+parsed = urlparse(value)
+if not parsed.netloc:
+    value = "http://127.0.0.1:11434"
+value = value.rstrip("/")
+
+config_path = Path.home() / ".talky" / "settings.json"
+data = {}
+if config_path.exists():
+    try:
+        data = json.loads(config_path.read_text(encoding="utf-8"))
+    except Exception:
+        data = {}
+data["ollama_host"] = value
+config_path.parent.mkdir(parents=True, exist_ok=True)
+config_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+print(value)
+PY
+}
+
+run_ollama_host_wizard() {
+  echo ""
+  echo "==> First-run Ollama host setup"
+  echo "Local Ollama is unavailable or has no model."
+  echo "Select Ollama mode:"
+  echo "  1) Local host (http://127.0.0.1:11434)"
+  echo "  2) Remote LAN host (http://<LAN_IP>:11434)"
+  while true; do
+    printf "Enter choice [1/2]: "
+    read -r choice
+    if [[ "$choice" == "1" ]]; then
+      local saved
+      saved="$(write_ollama_host_config "http://127.0.0.1:11434")"
+      echo "==> Saved ollama_host: $saved"
+      break
+    fi
+    if [[ "$choice" == "2" ]]; then
+      printf "Enter remote Ollama host (example: http://192.168.1.100:11434): "
+      read -r remote_host
+      local saved
+      saved="$(write_ollama_host_config "$remote_host")"
+      echo "==> Saved ollama_host: $saved"
+      break
+    fi
+    echo "Invalid choice. Please enter 1 or 2."
+  done
+  echo ""
+}
+
+refresh_ollama_mode_env() {
+  OLLAMA_HOST="$(resolve_ollama_host)"
+  export OLLAMA_HOST
+  IS_LOCAL_OLLAMA="$(is_local_ollama_host)"
+  export IS_LOCAL_OLLAMA
+
+  if [[ "$IS_LOCAL_OLLAMA" == "1" ]]; then
+    # Local mode: avoid proxy interference for localhost access.
+    unset http_proxy HTTP_PROXY https_proxy HTTPS_PROXY all_proxy ALL_PROXY
+    export NO_PROXY=localhost,127.0.0.1,::1
+    echo "==> Ollama host: $OLLAMA_HOST (mode: local)"
+    return
+  fi
+
+  REMOTE_OLLAMA_HOST="$(
+    python - <<'PY'
+import os
+from urllib.parse import urlparse
+
+host = os.environ.get("OLLAMA_HOST", "").strip()
+parsed = urlparse(host if "://" in host else f"http://{host}")
+print((parsed.hostname or "").strip())
+PY
+  )"
+  if [[ -n "${REMOTE_OLLAMA_HOST:-}" ]]; then
+    if [[ -n "${NO_PROXY:-}" ]]; then
+      export NO_PROXY="${NO_PROXY},${REMOTE_OLLAMA_HOST},localhost,127.0.0.1"
+    else
+      export NO_PROXY="${REMOTE_OLLAMA_HOST},localhost,127.0.0.1"
+    fi
+  fi
+  echo "==> Ollama host: $OLLAMA_HOST (mode: remote)"
+}
+
+FIRST_RUN_NO_HOST_CONFIG="$(is_first_run_without_host_config)"
+WIZARD_USED="0"
+refresh_ollama_mode_env
 
 deps_ready() {
   python - <<'PY'
@@ -166,26 +307,40 @@ if [[ ! -d "local_whisper_model" ]]; then
   python download_model.py
 fi
 
-if ! command -v ollama >/dev/null 2>&1; then
-  echo "Error: ollama command not found."
-  echo "Please install Ollama first: https://ollama.com/download"
-  exit 1
-fi
-
 mkdir -p ".logs"
 
-if ! pgrep -x "ollama" >/dev/null 2>&1; then
-  echo "==> Starting Ollama service..."
-  nohup ollama serve >".logs/ollama.log" 2>&1 &
-  sleep 2
-fi
+ensure_local_ollama_ready() {
+  if [[ "$IS_LOCAL_OLLAMA" != "1" ]]; then
+    return
+  fi
 
-MODEL_NAME="$(
+  if ! command -v ollama >/dev/null 2>&1; then
+    if [[ "$FIRST_RUN_NO_HOST_CONFIG" == "1" && "$WIZARD_USED" == "0" ]]; then
+      run_ollama_host_wizard
+      WIZARD_USED="1"
+      refresh_ollama_mode_env
+      return
+    fi
+    echo "Error: ollama command not found."
+    echo "Please install Ollama first: https://ollama.com/download"
+    exit 1
+  fi
+
+  if ! pgrep -x "ollama" >/dev/null 2>&1; then
+    echo "==> Starting Ollama service..."
+    nohup ollama serve >".logs/ollama.log" 2>&1 &
+    sleep 2
+  fi
+}
+
+resolve_model_name() {
 python - <<'PY'
 import json
-import subprocess
+import os
+import urllib.request
 from pathlib import Path
 
+host = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
 config_path = Path.home() / ".talky" / "settings.json"
 data = {}
 if config_path.exists():
@@ -198,12 +353,15 @@ configured = str(data.get("ollama_model", "")).strip()
 
 installed: list[str] = []
 try:
-    raw = subprocess.check_output(["ollama", "list"], text=True)
-    for line in raw.splitlines()[1:]:
-        line = line.strip()
-        if not line:
-            continue
-        name = line.split()[0].strip()
+    request = urllib.request.Request(  # noqa: S310
+        url=f"{host}/api/tags",
+        headers={"Content-Type": "application/json"},
+        method="GET",
+    )
+    with urllib.request.urlopen(request, timeout=10) as response:  # noqa: S310
+        payload = json.loads(response.read().decode("utf-8"))
+    for item in payload.get("models", []):
+        name = str(item.get("name", "")).strip()
         if name:
             installed.append(name)
 except Exception:
@@ -223,11 +381,22 @@ elif installed:
 
 print(selected)
 PY
-)"
+}
+
+ensure_local_ollama_ready
+MODEL_NAME="$(resolve_model_name)"
+
+if [[ -z "$MODEL_NAME" && "$IS_LOCAL_OLLAMA" == "1" && "$FIRST_RUN_NO_HOST_CONFIG" == "1" && "$WIZARD_USED" == "0" ]]; then
+  run_ollama_host_wizard
+  WIZARD_USED="1"
+  refresh_ollama_mode_env
+  ensure_local_ollama_ready
+  MODEL_NAME="$(resolve_model_name)"
+fi
 
 if [[ -z "$MODEL_NAME" ]]; then
-  echo "Error: no Ollama model found."
-  echo "Please pull any model first, for example:"
+  echo "Error: no Ollama model found from host: $OLLAMA_HOST"
+  echo "Please ensure Ollama is reachable and has at least one model, for example:"
   echo "  ollama pull <your-model>"
   echo "Then re-run start_talky.command."
   exit 1

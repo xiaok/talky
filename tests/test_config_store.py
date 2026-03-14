@@ -11,6 +11,7 @@ def test_load_defaults_when_file_missing(tmp_path: Path) -> None:
 
     assert settings.hotkey == "fn"
     assert settings.ollama_model == "qwen3.5:9b"
+    assert settings.ollama_host == "http://127.0.0.1:11434"
     assert settings.custom_dictionary == []
     assert settings.llm_debug_stream is False
 
@@ -23,6 +24,7 @@ def test_save_and_reload_custom_dictionary(tmp_path: Path) -> None:
     settings.custom_dictionary = ["TensorRT", "Alice"]
     settings.hotkey = "right_option"
     settings.llm_debug_stream = True
+    settings.ollama_host = "http://192.168.1.50:11434"
     store.save(settings)
 
     reloaded = store.load()
@@ -30,3 +32,4 @@ def test_save_and_reload_custom_dictionary(tmp_path: Path) -> None:
     assert reloaded.custom_dictionary == ["TensorRT", "Alice"]
     assert reloaded.hotkey == "right_option"
     assert reloaded.llm_debug_stream is True
+    assert reloaded.ollama_host == "http://192.168.1.50:11434"

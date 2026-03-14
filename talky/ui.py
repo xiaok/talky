@@ -28,7 +28,11 @@ from PyQt6.QtWidgets import (
 from talky.controller import AppController
 from talky.hotkey import GlobalShortcutListener
 from talky.models import AppSettings
-from talky.permissions import is_accessibility_trusted
+from talky.permissions import (
+    check_microphone_granted,
+    is_accessibility_trusted,
+    request_microphone_permission,
+)
 
 _ZH = {
     "settings": "\u8bbe\u7f6e",
@@ -39,6 +43,7 @@ _ZH = {
     "hotkey": "\u70ed\u952e",
     "whisper_model": "Whisper \u6a21\u578b",
     "ollama_model": "Ollama \u6a21\u578b",
+    "ollama_host": "Ollama \u5730\u5740",
     "asr_language": "ASR \u8bed\u8a00",
     "ui_language": "UI \u8bed\u8a00",
     "paste_delay": "\u7c98\u8d34\u5ef6\u8fdf",
@@ -54,6 +59,12 @@ _ZH = {
     "popup_subtitle": "\u53ef\u590d\u5236\u540e\u624b\u52a8\u7c98\u8d34",
     "copy_close": "\u590d\u5236\u5e76\u5173\u95ed",
     "settings_subtitle": "\u73bb\u7483\u98ce\u683c\u8bbe\u7f6e\u9762\u677f\uff1a\u8bcd\u5178\uff0c\u6a21\u578b\uff0c\u5f55\u97f3\u53c2\u6570",
+    "permission_status": "\u6743\u9650\u72b6\u6001",
+    "mic_permission": "\u9ea6\u514b\u98ce\u6743\u9650",
+    "accessibility_permission": "\u8f85\u52a9\u529f\u80fd\u6743\u9650",
+    "granted": "\u5df2\u6388\u6743",
+    "not_granted": "\u672a\u6388\u6743",
+    "request_mic_permission": "\u8bf7\u6c42\u9ea6\u514b\u98ce\u6743\u9650",
 }
 
 
@@ -194,6 +205,8 @@ class SettingsWindow(QWidget):
 
         self.whisper_model_input = QLineEdit()
         self.ollama_model_input = QLineEdit()
+        self.ollama_host_input = QLineEdit()
+        self.ollama_host_input.setPlaceholderText("http://127.0.0.1:11434")
         self.language_input = QLineEdit()
         self.ui_locale_combo = QComboBox()
         self.ui_locale_combo.addItem("English", userData="en")
@@ -213,6 +226,29 @@ class SettingsWindow(QWidget):
         self.permission_button.setObjectName("SecondaryButton")
         self.permission_button.clicked.connect(self._check_accessibility)
 
+        self.request_mic_button = QPushButton(
+            _tr(self._locale, "Request Microphone Permission", "request_mic_permission")
+        )
+        self.request_mic_button.setObjectName("SecondaryButton")
+        self.request_mic_button.clicked.connect(self._request_microphone_permission)
+
+        self.permission_status_title = self._card_title(
+            _tr(self._locale, "Permission Status", "permission_status")
+        )
+        self.mic_permission_label = QLabel(
+            _tr(self._locale, "Microphone Permission", "mic_permission")
+        )
+        self.mic_permission_label.setObjectName("WindowSubtitle")
+        self.mic_status_value_label = QLabel("")
+        self.mic_status_value_label.setObjectName("WindowSubtitle")
+
+        self.ax_permission_label = QLabel(
+            _tr(self._locale, "Accessibility Permission", "accessibility_permission")
+        )
+        self.ax_permission_label.setObjectName("WindowSubtitle")
+        self.ax_status_value_label = QLabel("")
+        self.ax_status_value_label.setObjectName("WindowSubtitle")
+
         form = QGridLayout()
         form.setHorizontalSpacing(12)
         form.setVerticalSpacing(10)
@@ -223,6 +259,7 @@ class SettingsWindow(QWidget):
             ("ASR Language", "asr_language", self.language_input),
         ]
         right_col = [
+            ("Ollama Host", "ollama_host", self.ollama_host_input),
             ("Ollama Model", "ollama_model", self.ollama_model_input),
             ("UI Language", "ui_language", self.ui_locale_combo),
             ("Auto Paste Delay", "paste_delay", self.paste_delay_input),
@@ -288,12 +325,22 @@ class SettingsWindow(QWidget):
         )
         settings_layout.addWidget(self._params_card_title)
         settings_layout.addLayout(form)
+        settings_layout.addWidget(self.permission_status_title)
+        permission_grid = QGridLayout()
+        permission_grid.setHorizontalSpacing(12)
+        permission_grid.setVerticalSpacing(8)
+        permission_grid.addWidget(self.mic_permission_label, 0, 0)
+        permission_grid.addWidget(self.mic_status_value_label, 0, 1)
+        permission_grid.addWidget(self.request_mic_button, 0, 2)
+        permission_grid.addWidget(self.ax_permission_label, 1, 0)
+        permission_grid.addWidget(self.ax_status_value_label, 1, 1)
+        permission_grid.addWidget(self.permission_button, 1, 2)
+        settings_layout.addLayout(permission_grid)
 
         container_layout.addWidget(dictionary_card, 1)
         container_layout.addWidget(settings_card, 0)
 
         button_row = QHBoxLayout()
-        button_row.addWidget(self.permission_button)
         button_row.addStretch(1)
         button_row.addWidget(self.save_button)
         container_layout.addLayout(button_row)
@@ -311,12 +358,14 @@ class SettingsWindow(QWidget):
         idx = self.hotkey_combo.findData(settings.hotkey)
         self.hotkey_combo.setCurrentIndex(0 if idx < 0 else idx)
         self.whisper_model_input.setText(settings.whisper_model)
+        self.ollama_host_input.setText(settings.ollama_host)
         self.ollama_model_input.setText(settings.ollama_model)
         self.language_input.setText(settings.language)
         locale_idx = self.ui_locale_combo.findData(settings.ui_locale)
         self.ui_locale_combo.setCurrentIndex(0 if locale_idx < 0 else locale_idx)
         self.paste_delay_input.setValue(settings.auto_paste_delay_ms)
         self.llm_debug_stream_checkbox.setChecked(settings.llm_debug_stream)
+        self._refresh_permission_status()
 
     def _apply_locale_texts(self) -> None:
         self.setWindowTitle(f"Talky - {_tr(self._locale, 'Settings', 'settings')}")
@@ -334,12 +383,40 @@ class SettingsWindow(QWidget):
         self._params_card_title.setText(
             _tr(self._locale, "Base Parameters", "base_params")
         )
+        self.permission_status_title.setText(
+            _tr(self._locale, "Permission Status", "permission_status")
+        )
+        self.mic_permission_label.setText(
+            _tr(self._locale, "Microphone Permission", "mic_permission")
+        )
+        self.ax_permission_label.setText(
+            _tr(self._locale, "Accessibility Permission", "accessibility_permission")
+        )
         self.save_button.setText(_tr(self._locale, "Save", "save"))
         self.permission_button.setText(
             _tr(self._locale, "Check Accessibility", "check_accessibility")
         )
+        self.request_mic_button.setText(
+            _tr(self._locale, "Request Microphone Permission", "request_mic_permission")
+        )
         for label, en_text, key in self._form_labels:
             label.setText(_tr(self._locale, en_text, key))
+
+    def _refresh_permission_status(self) -> None:
+        mic_ok, _ = check_microphone_granted()
+        ax_ok = is_accessibility_trusted(prompt=False)
+        self.mic_status_value_label.setText(
+            _tr(self._locale, "granted", "granted")
+            if mic_ok
+            else _tr(self._locale, "not granted", "not_granted")
+        )
+        self.ax_status_value_label.setText(
+            _tr(self._locale, "granted", "granted")
+            if ax_ok
+            else _tr(self._locale, "not granted", "not_granted")
+        )
+        self.request_mic_button.setVisible(not mic_ok)
+        self.permission_button.setVisible(not ax_ok)
 
     def _save_settings(self) -> None:
         terms = [
@@ -352,6 +429,10 @@ class SettingsWindow(QWidget):
             hotkey=str(self.hotkey_combo.currentData()),
             whisper_model=self.whisper_model_input.text().strip() or "./local_whisper_model",
             ollama_model=self.ollama_model_input.text().strip() or "qwen3.5:9b",
+            ollama_host=(
+                self.ollama_host_input.text().strip().rstrip("/")
+                or "http://127.0.0.1:11434"
+            ),
             ui_locale=str(self.ui_locale_combo.currentData()),
             language=self.language_input.text().strip() or "zh",
             auto_paste_delay_ms=self.paste_delay_input.value(),
@@ -360,6 +441,7 @@ class SettingsWindow(QWidget):
             channels=self.controller.settings.channels,
         )
         self.controller.update_settings(settings)
+        self._refresh_permission_status()
         QMessageBox.information(self, "Talky", _tr(settings.ui_locale, "Settings saved.", "saved"))
 
     def _check_accessibility(self) -> None:
@@ -378,6 +460,26 @@ class SettingsWindow(QWidget):
             _tr(locale, "Accessibility permission missing.", "access_missing")
             + "\nSystem Settings > Privacy & Security > Accessibility.",
         )
+        self._refresh_permission_status()
+
+    def _request_microphone_permission(self) -> None:
+        locale = str(self.ui_locale_combo.currentData())
+        granted, detail = request_microphone_permission()
+        self._refresh_permission_status()
+        if granted:
+            QMessageBox.information(
+                self,
+                "Talky",
+                "Microphone permission granted.",
+            )
+            return
+        QMessageBox.warning(
+            self,
+            "Talky",
+            "Microphone permission missing."
+            + "\nSystem Settings > Privacy & Security > Microphone."
+            + (f"\nDetails: {detail}" if detail else ""),
+        )
 
     def _build_glass_card(self) -> QFrame:
         card = QFrame()
@@ -391,6 +493,7 @@ class SettingsWindow(QWidget):
 
     def showEvent(self, event) -> None:  # type: ignore[override]
         super().showEvent(event)
+        self._refresh_permission_status()
         self.setWindowOpacity(0.0)
         anim = QPropertyAnimation(self, b"windowOpacity")
         anim.setDuration(180)

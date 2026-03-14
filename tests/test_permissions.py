@@ -70,3 +70,76 @@ def test_check_ollama_reachable_reports_unavailable_when_all_fail() -> None:
 
     assert ok is False
     assert "Ollama service unavailable" in error
+
+
+def test_check_microphone_granted_true_when_avfoundation_authorized(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    permissions = importlib.import_module("talky.permissions")
+
+    fake_av = types.SimpleNamespace(
+        AVMediaTypeAudio="audio",
+        AVAuthorizationStatusNotDetermined=0,
+        AVAuthorizationStatusAuthorized=3,
+        AVCaptureDevice=types.SimpleNamespace(
+            authorizationStatusForMediaType_=lambda media: 3  # noqa: ARG005
+        ),
+    )
+    monkeypatch.setitem(sys.modules, "AVFoundation", fake_av)
+
+    ok, error = permissions.check_microphone_granted()
+
+    assert ok is True
+    assert error == ""
+
+
+def test_check_microphone_granted_false_when_avfoundation_denied(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    permissions = importlib.import_module("talky.permissions")
+
+    fake_av = types.SimpleNamespace(
+        AVMediaTypeAudio="audio",
+        AVAuthorizationStatusNotDetermined=0,
+        AVAuthorizationStatusAuthorized=3,
+        AVCaptureDevice=types.SimpleNamespace(
+            authorizationStatusForMediaType_=lambda media: 2  # noqa: ARG005
+        ),
+    )
+    monkeypatch.setitem(sys.modules, "AVFoundation", fake_av)
+
+    ok, error = permissions.check_microphone_granted()
+
+    assert ok is False
+    assert "not granted" in error.lower()
+
+
+def test_request_microphone_permission_requests_when_not_determined(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    permissions = importlib.import_module("talky.permissions")
+
+    state = {"status": 0}
+
+    def status_for_media_type(_media):
+        return state["status"]
+
+    def request_access(_media, handler):
+        state["status"] = 3
+        handler(True)
+
+    fake_av = types.SimpleNamespace(
+        AVMediaTypeAudio="audio",
+        AVAuthorizationStatusNotDetermined=0,
+        AVAuthorizationStatusAuthorized=3,
+        AVCaptureDevice=types.SimpleNamespace(
+            authorizationStatusForMediaType_=status_for_media_type,
+            requestAccessForMediaType_completionHandler_=request_access,
+        ),
+    )
+    monkeypatch.setitem(sys.modules, "AVFoundation", fake_av)
+
+    ok, error = permissions.request_microphone_permission()
+
+    assert ok is True
+    assert error == ""
