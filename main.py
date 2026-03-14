@@ -1,34 +1,113 @@
 from __future__ import annotations
 
+import os
 import signal
 import sys
+import threading
 from pathlib import Path
 
 from PyQt6.QtWidgets import QApplication
 
 from talky.permissions import is_accessibility_trusted
 
+_SIGNAL_PUMP_TIMER = None
+_PENDING_EXIT_SIGNAL: int | None = None
+_EXIT_REQUESTED = False
+
 
 def default_config_path() -> Path:
     return Path.home() / ".talky" / "settings.json"
 
 
+def _force_exit_after_timeout(signum: int) -> None:
+    app = QApplication.instance()
+    if app is not None:
+        os._exit(128 + signum)
+
+
+def _request_graceful_exit(*, tray_app, controller, signum: int) -> None:
+    global _EXIT_REQUESTED
+    if _EXIT_REQUESTED:
+        return
+    _EXIT_REQUESTED = True
+
+    fallback = threading.Timer(2.0, _force_exit_after_timeout, args=(signum,))
+    fallback.daemon = True
+    fallback.start()
+
+    app = QApplication.instance()
+    if app is not None:
+        try:
+            app.aboutToQuit.connect(fallback.cancel)
+        except Exception:
+            pass
+
+    try:
+        tray_app.quit_app()
+    except Exception:
+        try:
+            controller.stop()
+        except Exception:
+            pass
+        if app is not None:
+            app.quit()
+
+
+def _install_qt_signal_pump(*, tray_app, controller) -> None:
+    qapp_instance = getattr(QApplication, "instance", None)
+    if qapp_instance is None:
+        return
+    try:
+        app = qapp_instance()
+    except Exception:
+        return
+    if app is None:
+        return
+
+    try:
+        from PyQt6.QtCore import QTimer
+    except Exception:
+        return
+
+    timer = QTimer()
+    timer.setInterval(200)
+    def _poll_pending_exit() -> None:
+        global _PENDING_EXIT_SIGNAL
+        if _PENDING_EXIT_SIGNAL is None:
+            return
+        signum = _PENDING_EXIT_SIGNAL
+        _PENDING_EXIT_SIGNAL = None
+        _request_graceful_exit(
+            tray_app=tray_app,
+            controller=controller,
+            signum=signum,
+        )
+
+    timer.timeout.connect(_poll_pending_exit)
+    timer.start()
+
+    try:
+        app.aboutToQuit.connect(timer.stop)
+    except Exception:
+        pass
+
+    global _SIGNAL_PUMP_TIMER
+    _SIGNAL_PUMP_TIMER = timer
+
+    try:
+        app.setProperty("talky_signal_pump_timer", timer)
+    except Exception:
+        pass
+
+
 def install_signal_handlers(*, tray_app, controller) -> None:
     def _handle_signal(signum, _frame) -> None:  # noqa: ANN001
-        del signum
-        try:
-            tray_app.quit_app()
-        except Exception:
-            try:
-                controller.stop()
-            except Exception:
-                pass
-            app = QApplication.instance()
-            if app is not None:
-                app.quit()
+        global _PENDING_EXIT_SIGNAL
+        _PENDING_EXIT_SIGNAL = int(signum)
 
     signal.signal(signal.SIGINT, _handle_signal)
     signal.signal(signal.SIGTERM, _handle_signal)
+    _install_qt_signal_pump(tray_app=tray_app, controller=controller)
 
 
 def main() -> int:
