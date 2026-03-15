@@ -16,15 +16,27 @@ class AudioRecorder:
         self._stream: sd.InputStream | None = None
         self._chunks: list[np.ndarray] = []
         self._active_sample_rate = float(sample_rate)
+        self._last_duration_s = 0.0
+        self._last_rms = 0.0
 
     @property
     def is_recording(self) -> bool:
         return self._stream is not None
 
+    @property
+    def last_duration_s(self) -> float:
+        return self._last_duration_s
+
+    @property
+    def last_rms(self) -> float:
+        return self._last_rms
+
     def start(self) -> None:
         if self._stream is not None:
             return
         self._chunks.clear()
+        self._last_duration_s = 0.0
+        self._last_rms = 0.0
 
         def _callback(indata: np.ndarray, frames: int, time_info: dict, status) -> None:
             del frames, time_info
@@ -114,6 +126,16 @@ class AudioRecorder:
             raise RuntimeError("No audio captured.")
 
         audio = np.concatenate(self._chunks, axis=0)
+        frames = int(audio.shape[0]) if audio.ndim >= 1 else 0
+        self._last_duration_s = (
+            float(frames) / float(self._active_sample_rate)
+            if self._active_sample_rate > 0
+            else 0.0
+        )
+        if audio.size > 0:
+            self._last_rms = float(np.sqrt(np.mean(np.square(audio), dtype=np.float64)))
+        else:
+            self._last_rms = 0.0
         tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
         path = Path(tmp.name)
         tmp.close()

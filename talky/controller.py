@@ -32,6 +32,27 @@ from talky.text_guard import (
     enforce_source_boundaries,
 )
 
+_OPENCC_SIMPLIFIER = None
+_MIN_RECORD_DURATION_S = 0.30
+_MIN_RECORD_RMS = 0.003
+_HOTKEY_COOLDOWN_S = 0.45
+
+
+def normalize_to_simplified_chinese(text: str) -> str:
+    global _OPENCC_SIMPLIFIER
+    if not text:
+        return text
+    if _OPENCC_SIMPLIFIER is None:
+        try:
+            from opencc import OpenCC
+        except Exception:
+            return text
+        _OPENCC_SIMPLIFIER = OpenCC("t2s")
+    try:
+        return _OPENCC_SIMPLIFIER.convert(text)
+    except Exception:
+        return text
+
 
 class AppController(QObject):
     status_signal = pyqtSignal(str)
@@ -68,6 +89,7 @@ class AppController(QObject):
         self.hotkey: HoldToTalkHotkey | None = None
         self._last_output_text = ""
         self._last_output_ts = 0.0
+        self._hotkey_cooldown_until_ts = 0.0
 
     def start(self) -> None:
         self._start_hotkey()
@@ -126,6 +148,7 @@ class AppController(QObject):
             self.hotkey.stop()
         self.hotkey = HoldToTalkHotkey(
             key_mode=self.settings.hotkey,
+            custom_keys=self.settings.custom_hotkey,
             on_press=self._on_hotkey_pressed,
             on_release=self._on_hotkey_released,
         )
@@ -134,6 +157,8 @@ class AppController(QObject):
             self.status_signal.emit("Fn hook unavailable. Fallback to Right Option.")
 
     def _on_hotkey_pressed(self) -> None:
+        if time.monotonic() < self._hotkey_cooldown_until_ts:
+            return
         if self._is_processing or self._is_recording:
             return
         try:
@@ -155,6 +180,20 @@ class AppController(QObject):
         try:
             wav_path = self.recorder.stop_and_dump_wav()
             self._is_recording = False
+            duration_s = self.recorder.last_duration_s
+            rms = self.recorder.last_rms
+            if duration_s < _MIN_RECORD_DURATION_S:
+                self.status_signal.emit(
+                    f"Recording too short ({duration_s*1000:.0f}ms). Ignored."
+                )
+                wav_path.unlink(missing_ok=True)
+                return
+            if rms < _MIN_RECORD_RMS:
+                self.status_signal.emit(
+                    f"Audio too quiet (rms={rms:.4f}). Ignored."
+                )
+                wav_path.unlink(missing_ok=True)
+                return
             self.status_signal.emit("Recording stopped. Processing...")
             self._is_processing = True
             worker = threading.Thread(
@@ -166,6 +205,8 @@ class AppController(QObject):
         except Exception as exc:
             self._is_recording = False
             self.error_signal.emit(f"Failed to stop recording: {exc}")
+        finally:
+            self._hotkey_cooldown_until_ts = time.monotonic() + _HOTKEY_COOLDOWN_S
 
     def _process_pipeline(self, wav_path: Path) -> None:
         try:
@@ -217,6 +258,8 @@ class AppController(QObject):
             final_text = enforce_pronoun_consistency(corrected_raw_text, final_text)
             final_text = enforce_source_boundaries(corrected_raw_text, final_text)
             final_text = collapse_duplicate_output(final_text)
+            # Keep cross-device output style stable by normalizing Chinese to Simplified.
+            final_text = normalize_to_simplified_chinese(final_text)
             if not final_text:
                 raise RuntimeError("LLM returned empty text. Please retry.")
 

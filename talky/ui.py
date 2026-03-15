@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import pyperclip
-from PyQt6.QtCore import QEasingCurve, QPropertyAnimation, QRect, Qt
+from PyQt6.QtCore import QEasingCurve, QPropertyAnimation, QRect, Qt, QTimer
 from PyQt6.QtGui import QAction, QIcon
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
+    QDialog,
     QFrame,
     QGraphicsDropShadowEffect,
     QGridLayout,
@@ -27,7 +28,7 @@ from PyQt6.QtWidgets import (
 )
 
 from talky.controller import AppController
-from talky.hotkey import GlobalShortcutListener
+from talky.hotkey import GlobalShortcutListener, label_for_hotkey_tokens
 from talky.models import AppSettings
 from talky.permissions import (
     check_microphone_granted,
@@ -68,6 +69,11 @@ _ZH = {
     "request_mic_permission": "\u8bf7\u6c42\u9ea6\u514b\u98ce\u6743\u9650",
     "ui_option_english": "\u82f1\u6587",
     "ui_option_chinese": "\u4e2d\u6587",
+    "hotkey_record_button": "\u5f55\u5236\u81ea\u5b9a\u4e49\u70ed\u952e",
+    "hotkey_reset_default": "\u6062\u590d\u9ed8\u8ba4\uff08Fn\uff09",
+    "hotkey_recommended_fallback": "\u4f7f\u7528\u63a8\u8350\u5907\u7528\uff08Right Option\uff09",
+    "hotkey_custom_hint": "\u5f53\u524d\u81ea\u5b9a\u4e49\uff1a",
+    "hotkey_custom_empty": "\u5c1a\u672a\u5f55\u5236\u81ea\u5b9a\u4e49\u70ed\u952e",
 }
 
 
@@ -219,6 +225,44 @@ QMessageBox QPushButton {
 """
 
 
+class CustomHotkeyCaptureDialog(QDialog):
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Record custom hotkey")
+        self.setModal(True)
+        self.resize(420, 140)
+        self.captured_tokens: list[str] = []
+
+        self.info = QLabel("Press and hold your desired hotkey now...")
+        self.info.setObjectName("WindowSubtitle")
+        layout = QVBoxLayout()
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.addWidget(self.info)
+        self.setLayout(layout)
+
+    def keyPressEvent(self, event) -> None:  # type: ignore[override]
+        tokens = self._tokens_from_event(event)
+        if tokens:
+            self.captured_tokens = tokens
+            self.info.setText(f"Captured: {label_for_hotkey_tokens(tokens)}")
+            QTimer.singleShot(120, self.accept)
+            return
+        super().keyPressEvent(event)
+
+    def _tokens_from_event(self, event) -> list[str]:
+        tokens: set[str] = set()
+        mods = event.modifiers()
+        if mods & Qt.KeyboardModifier.AltModifier:
+            tokens.add("alt")
+        if mods & Qt.KeyboardModifier.ControlModifier:
+            tokens.add("ctrl")
+        if mods & Qt.KeyboardModifier.ShiftModifier:
+            tokens.add("shift")
+        if mods & Qt.KeyboardModifier.MetaModifier:
+            tokens.add("cmd")
+        return sorted(tokens)
+
+
 class SettingsWindow(QWidget):
     def __init__(self, controller: AppController) -> None:
         super().__init__()
@@ -236,8 +280,50 @@ class SettingsWindow(QWidget):
 
         self.hotkey_combo = QComboBox()
         self.hotkey_combo.setObjectName("InsetIconField")
-        self.hotkey_combo.addItem("Fn / Globe (Primary)", userData="fn")
-        self.hotkey_combo.addItem("Right Option (Fallback)", userData="right_option")
+        self.hotkey_combo.addItem("Fn / Globe (Default)", userData="fn")
+        self.hotkey_combo.addItem("Right Option", userData="right_option")
+        self.hotkey_combo.addItem("Right Command", userData="right_command")
+        self.hotkey_combo.addItem("Command + Option", userData="command_option")
+        self.hotkey_combo.addItem("Custom (record below)", userData="custom")
+        self.hotkey_combo.currentIndexChanged.connect(self._on_hotkey_mode_changed)
+
+        self.hotkey_record_button = QPushButton(
+            _tr(self._locale, "Record custom hotkey", "hotkey_record_button")
+        )
+        self.hotkey_record_button.setObjectName("SecondaryButton")
+        self.hotkey_record_button.clicked.connect(self._begin_custom_hotkey_record)
+
+        self.hotkey_reset_default_button = QPushButton(
+            _tr(self._locale, "Reset to default (Fn)", "hotkey_reset_default")
+        )
+        self.hotkey_reset_default_button.setObjectName("SecondaryButton")
+        self.hotkey_reset_default_button.clicked.connect(self._reset_default_hotkey)
+
+        self.hotkey_recommended_button = QPushButton(
+            _tr(
+                self._locale,
+                "Use recommended fallback (Right Option)",
+                "hotkey_recommended_fallback",
+            )
+        )
+        self.hotkey_recommended_button.setObjectName("SecondaryButton")
+        self.hotkey_recommended_button.clicked.connect(self._use_recommended_fallback_hotkey)
+
+        self.hotkey_custom_preview = QLabel("")
+        self.hotkey_custom_preview.setObjectName("WindowSubtitle")
+
+        self._custom_hotkey_tokens: list[str] = []
+
+        hotkey_controls = QVBoxLayout()
+        hotkey_controls.setContentsMargins(0, 0, 0, 0)
+        hotkey_controls.setSpacing(8)
+        hotkey_controls.addWidget(self.hotkey_combo)
+        hotkey_controls.addWidget(self.hotkey_record_button)
+        hotkey_controls.addWidget(self.hotkey_custom_preview)
+        hotkey_controls.addWidget(self.hotkey_recommended_button)
+        hotkey_controls.addWidget(self.hotkey_reset_default_button)
+        self.hotkey_widget = QWidget()
+        self.hotkey_widget.setLayout(hotkey_controls)
 
         self.whisper_model_input = QLineEdit()
         self.ollama_model_input = QLineEdit()
@@ -296,7 +382,7 @@ class SettingsWindow(QWidget):
         form.setVerticalSpacing(10)
 
         fields = [
-            ("Record Hotkey", "hotkey", self.hotkey_combo),
+            ("Record Hotkey", "hotkey", self.hotkey_widget),
             ("Whisper Model", "whisper_model", self.whisper_model_input),
             ("ASR Language", "asr_language", self.language_input),
             ("Ollama Host", "ollama_host", self.ollama_host_input),
@@ -390,8 +476,10 @@ class SettingsWindow(QWidget):
         self._locale = settings.ui_locale
         self._apply_locale_texts()
         self.dictionary_edit.setPlainText("\n".join(settings.custom_dictionary))
+        self._custom_hotkey_tokens = [t.strip().lower() for t in settings.custom_hotkey if t.strip()]
         idx = self.hotkey_combo.findData(settings.hotkey)
         self.hotkey_combo.setCurrentIndex(0 if idx < 0 else idx)
+        self._apply_hotkey_control_state()
         self.whisper_model_input.setText(settings.whisper_model)
         self.ollama_host_input.setText(settings.ollama_host)
         self.ollama_model_input.setText(settings.ollama_model)
@@ -434,6 +522,19 @@ class SettingsWindow(QWidget):
         self.request_mic_button.setText(
             _tr(self._locale, "Request Microphone Permission", "request_mic_permission")
         )
+        self.hotkey_record_button.setText(
+            _tr(self._locale, "Record custom hotkey", "hotkey_record_button")
+        )
+        self.hotkey_reset_default_button.setText(
+            _tr(self._locale, "Reset to default (Fn)", "hotkey_reset_default")
+        )
+        self.hotkey_recommended_button.setText(
+            _tr(
+                self._locale,
+                "Use recommended fallback (Right Option)",
+                "hotkey_recommended_fallback",
+            )
+        )
         self.ui_locale_combo.setItemText(
             0, _tr(self._locale, "English", "ui_option_english")
         )
@@ -442,6 +543,78 @@ class SettingsWindow(QWidget):
         )
         for label, en_text, key in self._form_labels:
             label.setText(_tr(self._locale, en_text, key))
+        self._refresh_custom_hotkey_preview()
+
+    def _on_hotkey_mode_changed(self) -> None:
+        self._apply_hotkey_control_state()
+
+    def _apply_hotkey_control_state(self) -> None:
+        current_mode = str(self.hotkey_combo.currentData())
+        is_custom = current_mode == "custom"
+        self.hotkey_record_button.setEnabled(is_custom)
+        self.hotkey_custom_preview.setVisible(is_custom)
+        self._refresh_custom_hotkey_preview()
+
+    def _refresh_custom_hotkey_preview(self) -> None:
+        if not self._custom_hotkey_tokens:
+            text = _tr(
+                self._locale,
+                "No custom hotkey recorded yet.",
+                "hotkey_custom_empty",
+            )
+            self.hotkey_custom_preview.setText(text)
+            return
+        value = label_for_hotkey_tokens(self._custom_hotkey_tokens)
+        prefix = _tr(self._locale, "Custom:", "hotkey_custom_hint")
+        self.hotkey_custom_preview.setText(f"{prefix} {value}")
+
+    def _begin_custom_hotkey_record(self) -> None:
+        dialog = CustomHotkeyCaptureDialog(self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        valid, reason, tokens = self._validate_custom_hotkey(set(dialog.captured_tokens))
+        if not valid:
+            QMessageBox.warning(self, "Talky", reason)
+            self._refresh_custom_hotkey_preview()
+            return
+
+        self._custom_hotkey_tokens = tokens
+        self._refresh_custom_hotkey_preview()
+        QMessageBox.information(
+            self,
+            "Talky",
+            f"Custom hotkey recorded: {label_for_hotkey_tokens(tokens)}",
+        )
+
+    def _validate_custom_hotkey(self, tokens: set[str]) -> tuple[bool, str, list[str]]:
+        filtered = sorted(t for t in tokens if t)
+        if not filtered:
+            return False, "No valid key detected. Hold modifiers or function keys.", []
+
+        if len(filtered) == 1 and filtered[0] in {"space", "enter"}:
+            return False, "Single typing key is not allowed for hold-to-talk.", []
+
+        token_set = set(filtered)
+        if "cmd" in token_set and "space" in token_set:
+            return False, "Cmd+Space conflicts with system shortcuts. Choose another hotkey.", []
+
+        stable_tokens = {
+            "alt",
+            "cmd",
+            "ctrl",
+            "shift",
+            "fn",
+        }
+        normalized = [t for t in filtered if t in stable_tokens]
+        if not normalized:
+            return False, "Only modifier keys are supported for custom hotkey.", []
+        return True, "", normalized
+
+    def _reset_default_hotkey(self) -> None:
+        self.hotkey_combo.setCurrentIndex(self.hotkey_combo.findData("fn"))
+
+    def _use_recommended_fallback_hotkey(self) -> None:
+        self.hotkey_combo.setCurrentIndex(self.hotkey_combo.findData("right_option"))
 
     def _refresh_permission_status(self) -> None:
         mic_ok, _ = check_microphone_granted()
@@ -465,9 +638,19 @@ class SettingsWindow(QWidget):
             for line in self.dictionary_edit.toPlainText().splitlines()
             if line.strip()
         ]
+        hotkey_mode = str(self.hotkey_combo.currentData())
+        custom_hotkey = list(self._custom_hotkey_tokens)
+        if hotkey_mode == "custom":
+            valid, reason, normalized = self._validate_custom_hotkey(set(custom_hotkey))
+            if not valid:
+                QMessageBox.warning(self, "Talky", reason)
+                return
+            custom_hotkey = normalized
+
         settings = AppSettings(
             custom_dictionary=terms,
-            hotkey=str(self.hotkey_combo.currentData()),
+            hotkey=hotkey_mode,
+            custom_hotkey=custom_hotkey,
             whisper_model=self.whisper_model_input.text().strip() or "./local_whisper_model",
             ollama_model=self.ollama_model_input.text().strip() or "qwen3.5:9b",
             ollama_host=(
@@ -481,6 +664,11 @@ class SettingsWindow(QWidget):
             sample_rate=self.controller.settings.sample_rate,
             channels=self.controller.settings.channels,
         )
+        # Delay hotkey listener rebuild until after the click event loop settles.
+        # This avoids macOS input-source assertion crashes on some machines.
+        QTimer.singleShot(0, lambda s=settings: self._apply_settings_deferred(s))
+
+    def _apply_settings_deferred(self, settings: AppSettings) -> None:
         self.controller.update_settings(settings)
         self._refresh_permission_status()
         QMessageBox.information(self, "Talky", _tr(settings.ui_locale, "Settings saved.", "saved"))

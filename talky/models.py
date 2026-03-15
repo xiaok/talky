@@ -8,6 +8,7 @@ from typing import Any
 class AppSettings:
     custom_dictionary: list[str] = field(default_factory=list)
     hotkey: str = "fn"  # "fn" or "right_option"
+    custom_hotkey: list[str] = field(default_factory=list)
     whisper_model: str = "./local_whisper_model"
     ollama_model: str = "qwen3.5:9b"
     ollama_host: str = "http://127.0.0.1:11434"
@@ -23,6 +24,7 @@ class AppSettings:
         return cls(
             custom_dictionary=list(data.get("custom_dictionary", [])),
             hotkey=str(data.get("hotkey", "fn")),
+            custom_hotkey=list(data.get("custom_hotkey", [])),
             whisper_model=str(
                 data.get("whisper_model", "./local_whisper_model")
             ),
