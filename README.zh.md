@@ -59,7 +59,7 @@ ollama pull <your-model>
 
 #### A）本地大模型（Talky 与 Ollama 在同一台 Mac）
 
-Step 1（一次性）：系统依赖 + 环境准备 + Whisper 模型下载
+Part 1（一次性）：系统依赖 + 环境准备 + Whisper 模型下载
 
 ```bash
 export https_proxy=http://127.0.0.1:7897
@@ -88,7 +88,7 @@ export all_proxy=socks5://127.0.0.1:7897
 python3 download_model.py
 ```
 
-Step 2（一次性）：首次启动
+Part 2（一次性）：首次启动
 
 ```bash
 cd /path/to/talky
@@ -96,14 +96,14 @@ chmod +x start_talky.command
 ./start_talky.command
 ```
 
-Step 3（日常）：一键切回本地模式并自动重启
+Part 3（日常）：一键切回本地模式并自动重启
 
 ```bash
 cd /path/to/talky
 ./start_talky.command --remote "http://127.0.0.1:11434" --model "qwen3.5:9b" --restart
 ```
 
-Step 4：成功信号
+Part 4：成功信号
 - `mode: local`
 - `Using Ollama model: ...`
 - `ASR elapsed`、`LLM elapsed`、`Final text`

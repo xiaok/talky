@@ -59,7 +59,7 @@ Install prerequisites manually first:
 
 #### A) Local Ollama (Talky and Ollama on the same Mac)
 
-Step 1 (one-time): system dependencies + environment setup + Whisper model download
+Part 1 (one-time): system dependencies + environment setup + Whisper model download
 
 ```bash
 export https_proxy=http://127.0.0.1:7897
@@ -88,7 +88,7 @@ export all_proxy=socks5://127.0.0.1:7897
 python3 download_model.py
 ```
 
-Step 2 (one-time): first startup
+Part 2 (one-time): first startup
 
 ```bash
 cd /path/to/talky
@@ -96,14 +96,14 @@ chmod +x start_talky.command
 ./start_talky.command
 ```
 
-Step 3 (daily): one-click switch back to local mode and auto-restart
+Part 3 (daily): one-click switch back to local mode and auto-restart
 
 ```bash
 cd /path/to/talky
 ./start_talky.command --remote "http://127.0.0.1:11434" --model "qwen3.5:9b" --restart
 ```
 
-Step 4: success signals
+Part 4: success signals
 - `mode: local`
 - `Using Ollama model: ...`
 - `ASR elapsed`, `LLM elapsed`, `Final text`
