@@ -7,6 +7,9 @@ import urllib.request
 import uuid
 from pathlib import Path
 
+# Cloudflare WAF / bot rules often block urllib's default User-Agent (Python-urllib/...).
+_DEFAULT_USER_AGENT = "Talky/1.0 (macOS; Cloud)"
+
 
 class CloudProcessService:
     """Sends audio to a remote Talky Cloud server for ASR + LLM processing."""
@@ -34,6 +37,7 @@ class CloudProcessService:
             headers={
                 "Content-Type": f"multipart/form-data; boundary={boundary}",
                 "X-API-Key": self.api_key,
+                "User-Agent": _DEFAULT_USER_AGENT,
             },
             method="POST",
         )
@@ -52,7 +56,9 @@ class CloudProcessService:
     def health_check(self) -> bool:
         try:
             req = urllib.request.Request(
-                url=f"{self.api_url}/api/health", method="GET",
+                url=f"{self.api_url}/api/health",
+                headers={"User-Agent": _DEFAULT_USER_AGENT},
+                method="GET",
             )
             with urllib.request.urlopen(req, timeout=5) as resp:  # noqa: S310
                 data = json.loads(resp.read().decode("utf-8"))
