@@ -29,3 +29,7 @@ htmlcov/
 # IDE/editor metadata
 .vscode/
 .idea/
+.worktrees/
+
+# Server secrets
+talky-server/api_keys.json
