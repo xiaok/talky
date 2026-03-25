@@ -64,3 +64,33 @@ def test_wizard_complete_saves_settings():
     saved = store.save.call_args[0][0]
     assert saved.ollama_model == "qwen3.5:9b"
     assert saved.ollama_host == "http://127.0.0.1:11434"
+
+
+def test_show_returning_user_prompt_not_installed():
+    from talky.onboarding import OllamaStatus, show_returning_user_prompt
+
+    with patch("talky.onboarding.QMessageBox") as mock_box:
+        mock_box.StandardButton = MagicMock()
+        mock_box.Icon = MagicMock()
+        show_returning_user_prompt(OllamaStatus.NOT_INSTALLED, locale="en")
+        mock_box.assert_called()
+
+
+def test_show_returning_user_prompt_not_running():
+    from talky.onboarding import OllamaStatus, show_returning_user_prompt
+
+    with patch("talky.onboarding.QMessageBox") as mock_box:
+        mock_box.StandardButton = MagicMock()
+        mock_box.Icon = MagicMock()
+        show_returning_user_prompt(OllamaStatus.NOT_RUNNING, locale="en")
+        mock_box.assert_called()
+
+
+def test_show_returning_user_prompt_no_model():
+    from talky.onboarding import OllamaStatus, show_returning_user_prompt
+
+    with patch("talky.onboarding.QMessageBox") as mock_box:
+        mock_box.StandardButton = MagicMock()
+        mock_box.Icon = MagicMock()
+        show_returning_user_prompt(OllamaStatus.NO_MODEL, locale="en")
+        mock_box.assert_called()

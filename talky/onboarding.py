@@ -89,6 +89,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QStackedWidget,
     QVBoxLayout,
@@ -525,3 +526,38 @@ class OnboardingWizard(QDialog):
         )
         self._config_store.save(settings)
         self.accept()
+
+
+def show_returning_user_prompt(status: OllamaStatus, locale: str = "en") -> None:
+    """Show a brief non-blocking QMessageBox for returning users."""
+    from talky.models import RECOMMENDED_OLLAMA_MODEL
+
+    box = QMessageBox()
+    box.setWindowTitle("Talky")
+    box.setIcon(QMessageBox.Icon.Warning)
+
+    if status == OllamaStatus.NOT_INSTALLED:
+        if locale == "zh":
+            box.setText("未检测到 Ollama，请安装后重启 Talky。")
+            box.setInformativeText("访问 ollama.com/download 下载安装。")
+        else:
+            box.setText("Ollama not detected. Please install and restart Talky.")
+            box.setInformativeText("Visit ollama.com/download to install.")
+    elif status == OllamaStatus.NOT_RUNNING:
+        if locale == "zh":
+            box.setText("Ollama 未启动。")
+            box.setInformativeText("请在终端运行：ollama serve")
+        else:
+            box.setText("Ollama is not running.")
+            box.setInformativeText("Please run in terminal: ollama serve")
+    elif status == OllamaStatus.NO_MODEL:
+        cmd = f"ollama pull {RECOMMENDED_OLLAMA_MODEL}"
+        if locale == "zh":
+            box.setText("未检测到可用模型。")
+            box.setInformativeText(f"请在终端运行：{cmd}")
+        else:
+            box.setText("No models detected.")
+            box.setInformativeText(f"Please run in terminal: {cmd}")
+
+    box.setStandardButtons(QMessageBox.StandardButton.Ok)
+    box.exec()
