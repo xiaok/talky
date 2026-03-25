@@ -29,3 +29,43 @@ def test_is_ollama_installed_returns_false_when_missing():
 
     with patch("talky.permissions.shutil.which", return_value=None):
         assert is_ollama_installed() is False
+
+
+def test_list_ollama_models_returns_names():
+    from talky.models import list_ollama_models
+
+    api_response = '{"models":[{"name":"qwen3.5:9b"},{"name":"llama3:8b"}]}'
+    with patch("talky.models.urllib.request.urlopen") as mock_open:
+        mock_open.return_value.__enter__ = lambda s: s
+        mock_open.return_value.__exit__ = lambda s, *a: None
+        mock_open.return_value.read.return_value = api_response.encode()
+        result = list_ollama_models()
+    assert result == ["qwen3.5:9b", "llama3:8b"]
+
+
+def test_list_ollama_models_returns_empty_on_failure():
+    from talky.models import list_ollama_models
+
+    with patch("talky.models.urllib.request.urlopen", side_effect=Exception("fail")):
+        assert list_ollama_models() == []
+
+
+def test_detect_system_locale_zh():
+    from talky.onboarding import detect_system_locale
+
+    with patch("locale.getdefaultlocale", return_value=("zh_CN", "UTF-8")):
+        assert detect_system_locale() == "zh"
+
+
+def test_detect_system_locale_en():
+    from talky.onboarding import detect_system_locale
+
+    with patch("locale.getdefaultlocale", return_value=("en_US", "UTF-8")):
+        assert detect_system_locale() == "en"
+
+
+def test_detect_system_locale_none():
+    from talky.onboarding import detect_system_locale
+
+    with patch("locale.getdefaultlocale", return_value=(None, None)):
+        assert detect_system_locale() == "en"

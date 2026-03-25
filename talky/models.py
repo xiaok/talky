@@ -29,6 +29,22 @@ def detect_ollama_model(host: str = "") -> str:
     return ""
 
 
+def list_ollama_models(host: str = "") -> list[str]:
+    """Query Ollama for installed models and return all names."""
+    host = (host or os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")).rstrip("/")
+    try:
+        req = urllib.request.Request(
+            url=f"{host}/api/tags",
+            headers={"Content-Type": "application/json"},
+            method="GET",
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:  # noqa: S310
+            data = json.loads(resp.read().decode("utf-8"))
+        return [str(m.get("name", "")) for m in data.get("models", []) if m.get("name")]
+    except Exception:
+        return []
+
+
 @dataclass(slots=True)
 class AppSettings:
     custom_dictionary: list[str] = field(default_factory=list)
