@@ -255,6 +255,7 @@ class OnboardingWizard(QDialog):
             from talky.models import list_ollama_models
             models = list_ollama_models()
             if models:
+                self._selected_model = models[0]
                 self.stack.setCurrentIndex(4)
             else:
                 self.stack.setCurrentIndex(3)
