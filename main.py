@@ -130,6 +130,31 @@ def main() -> int:
             "Grant permission in System Settings."
         )
 
+    # --- Onboarding / preflight check ---
+    from talky.onboarding import (
+        OllamaStatus,
+        OnboardingWizard,
+        detect_system_locale,
+        run_preflight_check,
+        show_returning_user_prompt,
+    )
+
+    settings = config_store.load()
+    if settings.mode != "cloud":
+        status = run_preflight_check()
+        if status != OllamaStatus.READY:
+            locale = detect_system_locale()
+            is_first_run = not config_store.config_path.exists()
+            if is_first_run:
+                wizard = OnboardingWizard(
+                    config_store=config_store,
+                    ollama_status=status,
+                    locale=locale,
+                )
+                wizard.exec()
+            else:
+                show_returning_user_prompt(status, locale=locale)
+
     controller.start()
     tray_app.show()
     return app.exec()
