@@ -81,6 +81,8 @@ def _load_api_keys() -> dict[str, str]:
 
 _api_keys: dict[str, str] = {}
 _llm: OllamaTextCleaner | None = None
+# Reported on /api/health for client startup checks (non-empty when server is usable).
+_advertised_llm_model: str = ""
 
 
 def _get_llm() -> OllamaTextCleaner:
@@ -178,9 +180,15 @@ async def lifespan(_app: FastAPI):
         print(f"[Talky Cloud] WARNING: No API keys in {_API_KEYS_FILE}")
         print("[Talky Cloud] Create api_keys.json: {\"user1\": \"sk-your-secret-key\"}")
 
+    global _advertised_llm_model
+
     print(f"[Talky Cloud] Whisper model: {WHISPER_MODEL}")
     print("[Talky Cloud] Warming up models...")
     await asyncio.get_event_loop().run_in_executor(None, _warmup)
+    if _llm is not None:
+        _advertised_llm_model = (_llm.model_name or "").strip()
+    else:
+        _advertised_llm_model = (OLLAMA_MODEL or detect_ollama_model() or "").strip()
     print(f"[Talky Cloud] Ready on port {SERVER_PORT}")
     yield
 
@@ -189,8 +197,26 @@ app = FastAPI(title="Talky Cloud", version="0.1.0", lifespan=lifespan)
 
 
 @app.get("/api/health")
-async def health():
-    return {"status": "ok", "whisper_model": WHISPER_MODEL}
+async def health(x_api_key: str | None = Header(None, alias="X-API-Key")):
+    """When api_keys.json has entries, clients must send a valid X-API-Key."""
+    if _api_keys:
+        if not x_api_key:
+            raise HTTPException(status_code=401, detail="API key required")
+        _verify_api_key(x_api_key)
+
+    wm = (WHISPER_MODEL or "").strip()
+    lm = (_advertised_llm_model or "").strip()
+    if not wm or not lm:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "degraded",
+                "whisper_model": wm,
+                "llm_model": lm,
+                "detail": "ASR or LLM model is not ready on this server",
+            },
+        )
+    return {"status": "ok", "whisper_model": WHISPER_MODEL, "llm_model": _advertised_llm_model}
 
 
 @app.post("/api/process")

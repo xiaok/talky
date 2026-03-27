@@ -3,12 +3,62 @@
 from __future__ import annotations
 
 import json
+import urllib.error
 import urllib.request
 import uuid
 from pathlib import Path
+from typing import Any
 
 # Cloudflare WAF / bot rules often block urllib's default User-Agent (Python-urllib/...).
 _DEFAULT_USER_AGENT = "Talky/1.0 (macOS; Cloud)"
+
+
+def verify_cloud_server(api_url: str, api_key: str) -> tuple[bool, str, dict[str, Any] | None]:
+    """GET /api/health; returns (ok, error_message, payload).
+
+    When the server has API keys configured, ``api_key`` must be valid.
+    Requires status ok and non-empty whisper_model + llm_model in the JSON body.
+    """
+    base = (api_url or "").strip().rstrip("/")
+    if not base:
+        return False, "Cloud API URL is empty.", None
+
+    headers: dict[str, str] = {"User-Agent": _DEFAULT_USER_AGENT}
+    key = (api_key or "").strip()
+    if key:
+        headers["X-API-Key"] = key
+
+    req = urllib.request.Request(
+        url=f"{base}/api/health",
+        headers=headers,
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:  # noqa: S310
+            raw = resp.read().decode("utf-8")
+            data: dict[str, Any] = json.loads(raw)
+    except urllib.error.HTTPError as exc:
+        try:
+            body = exc.read().decode("utf-8", errors="replace")
+            detail = json.loads(body).get("detail", body)
+        except Exception:
+            detail = exc.reason or str(exc)
+        return False, f"HTTP {exc.code}: {detail}", None
+    except Exception as exc:
+        return False, str(exc) or "Connection failed.", None
+
+    if data.get("status") != "ok":
+        detail = data.get("detail", "Server is not ready.")
+        return False, str(detail), None
+
+    wm = data.get("whisper_model")
+    lm = data.get("llm_model")
+    if not wm or not isinstance(wm, str) or not wm.strip():
+        return False, "Server did not report a Whisper (ASR) model.", None
+    if not lm or not isinstance(lm, str) or not lm.strip():
+        return False, "Server did not report an LLM model.", None
+
+    return True, "", data
 
 
 class CloudProcessService:
@@ -54,17 +104,8 @@ class CloudProcessService:
         return text
 
     def health_check(self) -> bool:
-        try:
-            req = urllib.request.Request(
-                url=f"{self.api_url}/api/health",
-                headers={"User-Agent": _DEFAULT_USER_AGENT},
-                method="GET",
-            )
-            with urllib.request.urlopen(req, timeout=5) as resp:  # noqa: S310
-                data = json.loads(resp.read().decode("utf-8"))
-            return data.get("status") == "ok"
-        except Exception:
-            return False
+        ok, _, _ = verify_cloud_server(self.api_url, self.api_key)
+        return ok
 
 
 def _build_multipart(

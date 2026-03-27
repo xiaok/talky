@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import array
+import math
 import tempfile
 import time
+import wave
 from pathlib import Path
 
-import numpy as np
 import sounddevice as sd
-import soundfile as sf
 
 
 class AudioRecorder:
@@ -14,7 +15,7 @@ class AudioRecorder:
         self.sample_rate = sample_rate
         self.channels = channels
         self._stream: sd.InputStream | None = None
-        self._chunks: list[np.ndarray] = []
+        self._chunks: list[array.array] = []
         self._active_sample_rate = float(sample_rate)
         self._last_duration_s = 0.0
         self._last_rms = 0.0
@@ -31,6 +32,28 @@ class AudioRecorder:
     def last_rms(self) -> float:
         return self._last_rms
 
+    def _append_chunk(self, indata) -> None:
+        """Buffer one callback block (NumPy ndarray when available, else array/memoryview)."""
+        if hasattr(indata, "__array_interface__"):
+            contiguous = indata.reshape(-1) if hasattr(indata, "reshape") else indata
+            chunk = array.array("f")
+            chunk.frombytes(contiguous.astype("float32", copy=False).tobytes())
+            self._chunks.append(chunk)
+            return
+        if isinstance(indata, array.array):
+            self._chunks.append(array.array("f", indata))
+            return
+        try:
+            self._chunks.append(array.array("f", indata))
+        except (TypeError, ValueError):
+            mv = memoryview(indata)
+            if mv.format == "f" and mv.itemsize == 4:
+                chunk = array.array("f")
+                chunk.frombytes(mv.tobytes())
+                self._chunks.append(chunk)
+            else:
+                raise
+
     def start(self) -> None:
         if self._stream is not None:
             return
@@ -38,12 +61,12 @@ class AudioRecorder:
         self._last_duration_s = 0.0
         self._last_rms = 0.0
 
-        def _callback(indata: np.ndarray, frames: int, time_info: dict, status) -> None:
+        def _callback(indata, frames: int, time_info: dict, status) -> None:
             del frames, time_info
             if status:
                 # Keep the stream alive even if occasional status is present.
                 pass
-            self._chunks.append(indata.copy())
+            self._append_chunk(indata)
 
         sample_rates = [float(self.sample_rate), self._default_input_sample_rate()]
         # De-duplicate while keeping order.
@@ -125,20 +148,33 @@ class AudioRecorder:
         if not self._chunks:
             raise RuntimeError("No audio captured.")
 
-        audio = np.concatenate(self._chunks, axis=0)
-        frames = int(audio.shape[0]) if audio.ndim >= 1 else 0
+        full = array.array("f")
+        for c in self._chunks:
+            full.extend(c)
+
+        n = len(full)
         self._last_duration_s = (
-            float(frames) / float(self._active_sample_rate)
-            if self._active_sample_rate > 0
-            else 0.0
+            float(n) / float(self._active_sample_rate) if self._active_sample_rate > 0 else 0.0
         )
-        if audio.size > 0:
-            self._last_rms = float(np.sqrt(np.mean(np.square(audio), dtype=np.float64)))
+        if n > 0:
+            mean_sq = sum(x * x for x in full) / float(n)
+            self._last_rms = math.sqrt(mean_sq)
         else:
             self._last_rms = 0.0
+
         tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
         path = Path(tmp.name)
         tmp.close()
-        sf.write(path, audio, int(round(self._active_sample_rate)))
+
+        pcm = array.array(
+            "h",
+            (int(max(-1.0, min(1.0, x)) * 32767.0) for x in full),
+        )
+        with wave.open(str(path), "wb") as wf:
+            wf.setnchannels(self.channels)
+            wf.setsampwidth(2)
+            wf.setframerate(int(round(self._active_sample_rate)))
+            wf.writeframes(pcm.tobytes())
+
         self._chunks.clear()
         return path

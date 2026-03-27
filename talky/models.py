@@ -10,6 +10,12 @@ from typing import Any
 RECOMMENDED_OLLAMA_MODEL = "qwen3.5:9b"
 
 
+def _default_ollama_model() -> str:
+    from talky.recommended_ollama import recommended_model_name
+
+    return recommended_model_name()
+
+
 def detect_ollama_model(host: str = "") -> str:
     """Query Ollama for installed models and return the first one found."""
     models = list_ollama_models(host)
@@ -38,7 +44,7 @@ class AppSettings:
     hotkey: str = "fn"  # "fn" or "right_option"
     custom_hotkey: list[str] = field(default_factory=list)
     whisper_model: str = "./local_whisper_model"
-    ollama_model: str = RECOMMENDED_OLLAMA_MODEL
+    ollama_model: str = field(default_factory=_default_ollama_model)
     ollama_host: str = "http://127.0.0.1:11434"
     ui_locale: str = "en"  # "en" or "mixed"
     language: str = "zh"
@@ -46,9 +52,10 @@ class AppSettings:
     llm_debug_stream: bool = False
     sample_rate: int = 16000
     channels: int = 1
-    mode: str = "local"  # "local" | "cloud"
+    mode: str = "local"  # "local" | "remote" | "cloud"
     cloud_api_url: str = ""
     cloud_api_key: str = ""
+    custom_llm_prompt: str = ""
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "AppSettings":
@@ -59,7 +66,11 @@ class AppSettings:
             whisper_model=str(
                 data.get("whisper_model", "./local_whisper_model")
             ),
-            ollama_model=str(data.get("ollama_model", RECOMMENDED_OLLAMA_MODEL)),
+            ollama_model=(
+                str(data["ollama_model"])
+                if "ollama_model" in data
+                else _default_ollama_model()
+            ),
             ollama_host=str(data.get("ollama_host", "http://127.0.0.1:11434")).rstrip("/"),
             ui_locale=str(data.get("ui_locale", "en")),
             language=str(data.get("language", "zh")),
@@ -70,6 +81,7 @@ class AppSettings:
             mode=str(data.get("mode", "local")),
             cloud_api_url=str(data.get("cloud_api_url", "")),
             cloud_api_key=str(data.get("cloud_api_key", "")),
+            custom_llm_prompt=str(data.get("custom_llm_prompt", "")),
         )
 
     def to_dict(self) -> dict[str, Any]:

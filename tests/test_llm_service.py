@@ -10,7 +10,11 @@ import pytest
 def _load_llm_service_with_fake_ollama(chat_impl, generate_impl=None):
     if generate_impl is None:
         generate_impl = lambda **kwargs: None  # noqa: E731, ANN001
-    fake_ollama = types.SimpleNamespace(chat=chat_impl, generate=generate_impl)
+
+    def _client_factory(host=None):  # noqa: ANN001
+        return types.SimpleNamespace(chat=chat_impl, generate=generate_impl)
+
+    fake_ollama = types.SimpleNamespace(Client=_client_factory)
     sys.modules["ollama"] = fake_ollama
     sys.modules.pop("talky.llm_service", None)
     return importlib.import_module("talky.llm_service")

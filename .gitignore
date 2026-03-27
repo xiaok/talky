@@ -9,6 +9,7 @@ local_whisper_model/
 
 .cursor_updates.md
 FEATURE_BACKLOG.md
+LOCAL_OPERATION_MANUAL.md
 tests/pics.iconset/
 tests/pics_valid.iconset/
 history/
@@ -29,7 +30,12 @@ htmlcov/
 # IDE/editor metadata
 .vscode/
 .idea/
+.cursor/
 .worktrees/
+worktrees/
+
+# Release artifacts
+release/
 
 # Server secrets
 talky-server/api_keys.json

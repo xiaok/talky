@@ -69,28 +69,71 @@ def test_wizard_complete_saves_settings():
 def test_show_returning_user_prompt_not_installed():
     from talky.onboarding import OllamaStatus, show_returning_user_prompt
 
+    store = MagicMock()
+
     with patch("talky.onboarding.QMessageBox") as mock_box:
-        mock_box.StandardButton = MagicMock()
         mock_box.Icon = MagicMock()
-        show_returning_user_prompt(OllamaStatus.NOT_INSTALLED, locale="en")
-        mock_box.assert_called()
+        mock_box.ButtonRole = MagicMock()
+        instance = mock_box.return_value
+        remote_btn = MagicMock(name="remote")
+        dl_btn = MagicMock(name="dl")
+        quit_btn = MagicMock(name="quit")
+        instance.addButton.side_effect = [remote_btn, dl_btn, quit_btn]
+        instance.clickedButton.return_value = quit_btn  # simulate quit
+        result = show_returning_user_prompt(
+            OllamaStatus.NOT_INSTALLED,
+            locale="en",
+            config_store=store,
+        )
+        assert result is False
 
 
-def test_show_returning_user_prompt_not_running():
+def test_show_returning_user_prompt_not_running_then_ok():
     from talky.onboarding import OllamaStatus, show_returning_user_prompt
 
-    with patch("talky.onboarding.QMessageBox") as mock_box:
-        mock_box.StandardButton = MagicMock()
+    store = MagicMock()
+    recheck_btn = MagicMock(name="recheck")
+    quit_btn = MagicMock(name="quit")
+
+    with (
+        patch("talky.onboarding.QMessageBox") as mock_box,
+        patch("talky.onboarding.check_ollama_reachable", side_effect=[(False, "err"), (True, "")]),
+        patch("talky.models.list_ollama_models", return_value=["qwen3.5:9b"]),
+    ):
         mock_box.Icon = MagicMock()
-        show_returning_user_prompt(OllamaStatus.NOT_RUNNING, locale="en")
-        mock_box.assert_called()
+        mock_box.ButtonRole = MagicMock()
+        instance = mock_box.return_value
+        instance.addButton.side_effect = [recheck_btn, quit_btn]
+        instance.clickedButton.return_value = recheck_btn
+        result = show_returning_user_prompt(
+            OllamaStatus.NOT_RUNNING,
+            locale="en",
+            config_store=store,
+        )
+        assert result is True
 
 
-def test_show_returning_user_prompt_no_model():
+def test_show_returning_user_prompt_no_model_then_ok():
     from talky.onboarding import OllamaStatus, show_returning_user_prompt
 
-    with patch("talky.onboarding.QMessageBox") as mock_box:
-        mock_box.StandardButton = MagicMock()
+    store = MagicMock()
+    term_btn = MagicMock(name="term")
+    recheck_btn = MagicMock(name="recheck")
+    quit_btn = MagicMock(name="quit")
+
+    with (
+        patch("talky.onboarding.QMessageBox") as mock_box,
+        patch("talky.onboarding.check_ollama_reachable", return_value=(True, "")),
+        patch("talky.models.list_ollama_models", side_effect=[[], ["qwen3.5:9b"]]),
+    ):
         mock_box.Icon = MagicMock()
-        show_returning_user_prompt(OllamaStatus.NO_MODEL, locale="en")
-        mock_box.assert_called()
+        mock_box.ButtonRole = MagicMock()
+        instance = mock_box.return_value
+        instance.addButton.side_effect = [term_btn, recheck_btn, quit_btn]
+        instance.clickedButton.return_value = recheck_btn
+        result = show_returning_user_prompt(
+            OllamaStatus.NO_MODEL,
+            locale="en",
+            config_store=store,
+        )
+        assert result is True

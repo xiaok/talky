@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import sys
 import threading
 import urllib.request
 
@@ -20,7 +21,14 @@ def is_accessibility_trusted(prompt: bool = False) -> bool:
 
 
 def is_ollama_installed() -> bool:
-    return shutil.which("ollama") is not None
+    if shutil.which("ollama") is not None:
+        return True
+    # GUI apps often have a minimal PATH; Homebrew installs are common.
+    if sys.platform == "darwin":
+        for path in ("/opt/homebrew/bin/ollama", "/usr/local/bin/ollama"):
+            if os.path.isfile(path) and os.access(path, os.X_OK):
+                return True
+    return False
 
 
 def check_microphone_granted() -> tuple[bool, str]:
@@ -104,23 +112,22 @@ def request_microphone_permission() -> tuple[bool, str]:
 
 
 def check_ollama_reachable() -> tuple[bool, str]:
-    try:
-        import ollama
+    """Probe Ollama via HTTP only.
 
-        ollama.list()
-        return True, ""
+    The frozen app bundles the Python `ollama` package; using its Client here could
+    behave differently from a real server and falsely report success. Match browser/tools.
+    """
+    host = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
+    try:
+        request = urllib.request.Request(  # noqa: S310
+            url=f"{host}/api/tags",
+            headers={"Content-Type": "application/json"},
+            method="GET",
+        )
+        with urllib.request.urlopen(request, timeout=8) as response:  # noqa: S310
+            data = json.loads(response.read().decode("utf-8"))
+        if isinstance(data, dict) and "models" in data:
+            return True, ""
+        return False, "Ollama /api/tags response format is invalid."
     except Exception as exc:
-        try:
-            host = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
-            request = urllib.request.Request(  # noqa: S310
-                url=f"{host}/api/tags",
-                headers={"Content-Type": "application/json"},
-                method="GET",
-            )
-            with urllib.request.urlopen(request, timeout=10) as response:  # noqa: S310
-                data = json.loads(response.read().decode("utf-8"))
-            if isinstance(data, dict) and "models" in data:
-                return True, ""
-            return False, "Ollama /api/tags response format is invalid."
-        except Exception:
-            return False, f"Ollama service unavailable: {exc}"
+        return False, f"Ollama service unavailable: {exc}"

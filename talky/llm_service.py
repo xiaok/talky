@@ -13,6 +13,9 @@ class OllamaTextCleaner:
     def __init__(self, model_name: str, debug_stream: bool = False) -> None:
         self.model_name = model_name
         self.debug_stream = debug_stream
+        # Module-level ollama.chat uses a Client created at import time (localhost only).
+        host = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
+        self._ollama_client = ollama.Client(host=host)
 
     def warm_up(self) -> None:
         self._chat_with_fallback(
@@ -22,8 +25,8 @@ class OllamaTextCleaner:
             options={"temperature": 0.0, "num_predict": 8, "top_p": 0.1},
         )
 
-    def clean(self, raw_text: str, dictionary_terms: list[str]) -> str:
-        system_prompt = build_llm_system_prompt(dictionary_terms)
+    def clean(self, raw_text: str, dictionary_terms: list[str], custom_prompt_template: str = "") -> str:
+        system_prompt = build_llm_system_prompt(dictionary_terms, custom_template=custom_prompt_template)
         stream = self._chat_with_fallback(
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -62,7 +65,7 @@ class OllamaTextCleaner:
 
     def _chat_with_fallback(self, messages, think: bool, stream: bool, options: dict):
         try:
-            return ollama.chat(
+            return self._ollama_client.chat(
                 model=self.model_name,
                 messages=messages,
                 think=think,

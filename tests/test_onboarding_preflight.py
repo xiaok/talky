@@ -27,7 +27,10 @@ def test_is_ollama_installed_returns_true_when_found():
 def test_is_ollama_installed_returns_false_when_missing():
     from talky.permissions import is_ollama_installed
 
-    with patch("talky.permissions.shutil.which", return_value=None):
+    with (
+        patch("talky.permissions.shutil.which", return_value=None),
+        patch("talky.permissions.os.path.isfile", return_value=False),
+    ):
         assert is_ollama_installed() is False
 
 

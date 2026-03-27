@@ -1,6 +1,6 @@
 # Talky — Implemented Features (Client + Server)
 
-This document summarizes behavior shipped in the **main** branch as of the session that closed **2026-03-26** (startup gate, remote Ollama fixes, recommended-model overrides, and related server health). Use it as a checklist for **DMG / release** alignment and QA.
+This document summarizes behavior shipped in the **main** branch (startup gate, remote Ollama fixes, recommended-model overrides, related server health) and **DMG 打包备忘** (updated **2026-03-27**). Use it as a checklist for **DMG / release** alignment and QA.
 
 ---
 
@@ -94,11 +94,44 @@ Packaging lives on branch **`feature/dmg-unsigned-prototype`** (git worktree: `.
 
 **Build:**
 
+From the **repository root** (or your DMG worktree checkout):
+
 ```bash
-cd .worktrees/feature-dmg-unsigned-prototype
+chmod +x scripts/build_unsigned_dmg.sh   # once, if needed
 ./scripts/build_unsigned_dmg.sh "0.4.0-local-gate.1"   # example version tag
 ```
 
-Output: `release/Talky-<version>-unsigned.dmg`. If **`hdiutil create` times out**, the **`.app` in `dist/`** may still be valid — re-run the script or repeat the DMG steps after closing other disk-heavy tasks.
+Output: `release/Talky-<version>-unsigned.dmg`.
+
+**Lightweight PyInstaller bundle:** The build script **does not** bundle **mlx**, **mlx_whisper**, **numpy**, or **torch** (and keeps **scipy** / **numba** / **llvmlite** excluded), keeping **`dist/Talky.app`** around ~100MB-class. **Local** ASR **lazy-imports** those libraries only when needed. For a **frozen** `.app` in local mode, either run from a **full dev venv** (`pip install -r requirements.txt`, `python download_model.py`, `python main.py`) or install once into **`~/.talky/extra-site-packages`** (see `talky/asr_service.py`: `pip install --target ~/.talky/extra-site-packages mlx mlx-whisper numpy`, then restart the app). **Cloud mode** needs no local MLX. Recording uses stdlib **`wave`** (no numpy on the capture path).
+
+**`build_unsigned_dmg.sh` — default DMG flow**
+
+1. PyInstaller produces `dist/Talky.app`; the script copies it (plus `Applications` symlink) into **`build/dmg_stage`**.
+2. **By default**, the stage is **`ditto`**’d to **`/tmp/talky-hdiutil.*/dmg_stage`** so `hdiutil` sees an ASCII path (helps with Unicode or synced project locations).
+3. One **`hdiutil create`** builds a compressed DMG:  
+   `-volname "Talky" -srcfolder <dmg_stage> -ov -format UDZO` → temporary output, then **`mv`** into `release/`.
+4. If direct **UDZO** fails, the script retries **UDRO** from the same folder + **`hdiutil convert`** to UDZO (still no blank-image attach/ditto pipeline).
+
+**Build ID:** Each run stamps a random 6-character **`TalkyBuildId`** into the app `Info.plist` and **`CURRENT_BUILD_ID`** in `talky/version_checker.py` (staging script does not add a visible `BUILD.txt` on the DMG volume). Override: `TALKY_BUILD_ID_OVERRIDE=...`.
+
+| Mode / variable | What it does |
+|-----------------|--------------|
+| **Default** | Single-step **`-srcfolder`** UDZO from `dmg_stage` (after `/tmp` copy unless skipped below). |
+| **`TALKY_DMG_SKIP_TMP_HDIUTIL=1`** | Run `hdiutil` against **`build/dmg_stage` in the repo** (no `/tmp` copy). Use only if paths are plain ASCII and you want to debug; iCloud/sync paths may still be risky. |
+| **`TALKY_HDIUTIL_VERBOSE=1`** | Pass **`-verbose`** to `hdiutil` / `convert`. |
+| **`TALKY_DMG_FANCY=1`** | **UDRW** image from the same **`dmg_stage`** with volume name **`Talky Installer`** → mount → optional background + AppleScript icon layout → detach → **convert** to UDZO. Slower and more failure-prone, nicer Finder window. |
+
+**If `hdiutil` hangs or times out (`Operation timed out`, long silence):**
+
+- Large **`-srcfolder`** trees can still stress `hdiutil` on some macOS builds; watch **`hdiutil`** / **`diskimages-helper`** in Activity Monitor.
+- After a successful PyInstaller step, **`dist/Talky.app`** is usually valid — zip or run locally while you retry DMG.
+- Run the script in a normal local Terminal (not a short-timeout environment); pause heavy disk jobs (Time Machine, huge copies).
+- Try **`TALKY_HDIUTIL_VERBOSE=1`**; optionally toggle **`TALKY_DMG_SKIP_TMP_HDIUTIL`** to see if `/tmp` vs repo path changes behavior.
+- Manual **UDRO** (often faster than UDZO, larger file):  
+  `hdiutil create -volname "Talky" -srcfolder build/dmg_stage -ov -format UDRO release/Talky-xxx-unsigned.dmg`
+- Fallback distribution: **`ditto` + `zip`** for **`Talky.app.zip`**.
+
+**Git：** worktree 上若曾 `git stash` 过「merge main 前」的改动，用 `git stash list` 查看；不需要时 `git stash drop`。
 
 See also: `docs/DMG_LAN_OLLAMA.md` for Mac mini + MacBook Ollama host setup.

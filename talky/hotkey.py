@@ -146,7 +146,7 @@ class HoldToTalkHotkey:
             tap = Quartz.CGEventTapCreate(
                 Quartz.kCGSessionEventTap,
                 Quartz.kCGHeadInsertEventTap,
-                Quartz.kCGEventTapOptionDefault,
+                Quartz.kCGEventTapOptionListenOnly,
                 mask,
                 _callback,
                 None,
@@ -194,7 +194,7 @@ class HoldToTalkHotkey:
             tap = Quartz.CGEventTapCreate(
                 Quartz.kCGSessionEventTap,
                 Quartz.kCGHeadInsertEventTap,
-                Quartz.kCGEventTapOptionDefault,
+                Quartz.kCGEventTapOptionListenOnly,
                 mask,
                 _callback,
                 None,
@@ -260,7 +260,7 @@ class GlobalShortcutListener:
             tap = Quartz.CGEventTapCreate(
                 Quartz.kCGSessionEventTap,
                 Quartz.kCGHeadInsertEventTap,
-                Quartz.kCGEventTapOptionDefault,
+                Quartz.kCGEventTapOptionListenOnly,
                 mask,
                 _callback,
                 None,

@@ -3,13 +3,13 @@ from __future__ import annotations
 import os
 import threading
 import time
-from urllib.parse import urlparse
 from pathlib import Path
+from typing import TYPE_CHECKING
+from urllib.parse import urlparse
 
 import sounddevice as sd
-from PyQt6.QtCore import QObject, pyqtSignal
+from PyQt6.QtCore import QObject, QTimer, Qt, pyqtSignal, pyqtSlot
 
-from talky.asr_service import MlxWhisperASR
 from talky.config_store import AppConfigStore
 from talky.dictionary_corrector import apply_phonetic_dictionary, normalize_person_pronouns
 from talky.dictionary_entries import (
@@ -32,6 +32,9 @@ from talky.text_guard import (
     enforce_pronoun_consistency,
     enforce_source_boundaries,
 )
+
+if TYPE_CHECKING:
+    from talky.asr_service import MlxWhisperASR
 
 _OPENCC_SIMPLIFIER = None
 _MIN_RECORD_DURATION_S = 0.30
@@ -61,6 +64,8 @@ class AppController(QObject):
     settings_updated = pyqtSignal(object)
     show_result_popup_signal = pyqtSignal(str)
     show_settings_window_signal = pyqtSignal()
+    # Paste on main thread only (worker emits); macOS + pynput need this.
+    paste_to_front_signal = pyqtSignal(str)
 
     def __init__(self, config_store: AppConfigStore) -> None:
         super().__init__()
@@ -72,10 +77,7 @@ class AppController(QObject):
             sample_rate=self.settings.sample_rate,
             channels=self.settings.channels,
         )
-        self.asr = MlxWhisperASR(
-            model_name=self.settings.whisper_model,
-            language=self.settings.language,
-        )
+        self._asr: MlxWhisperASR | None = None
         self.llm = OllamaTextCleaner(
             model_name=self.settings.ollama_model,
             debug_stream=self.settings.llm_debug_stream,
@@ -86,12 +88,33 @@ class AppController(QObject):
         )
         self.cloud_service: CloudProcessService | None = self._build_cloud_service()
 
+        self.paste_to_front_signal.connect(
+            self._do_paste_to_front,
+            Qt.ConnectionType.QueuedConnection,
+        )
+
         self._is_processing = False
         self._is_recording = False
         self.hotkey: HoldToTalkHotkey | None = None
         self._last_output_text = ""
         self._last_output_ts = 0.0
         self._hotkey_cooldown_until_ts = 0.0
+
+    def _get_asr(self) -> MlxWhisperASR:
+        if self.is_cloud_mode:
+            raise RuntimeError("Local ASR is not used in cloud mode.")
+        if self._asr is None:
+            from talky.asr_service import MlxWhisperASR
+
+            self._asr = MlxWhisperASR(
+                model_name=self.settings.whisper_model,
+                language=self.settings.language,
+            )
+        return self._asr
+
+    @pyqtSlot(str)
+    def _do_paste_to_front(self, text: str) -> None:
+        self.paster.paste_text(text)
 
     def start(self) -> None:
         self._start_hotkey()
@@ -115,6 +138,14 @@ class AppController(QObject):
         self.settings_updated.emit(new_settings)
         self.status_signal.emit("Settings saved.")
 
+    def update_dictionary(self, lines: list[str]) -> None:
+        """Update just the dictionary portion of settings."""
+        settings = self.config_store.load()
+        settings.custom_dictionary = lines
+        self.config_store.save(settings)
+        self.settings = settings
+        self.settings_updated.emit(settings)
+
     def _build_cloud_service(self) -> CloudProcessService | None:
         if (
             self.settings.mode == "cloud"
@@ -137,10 +168,7 @@ class AppController(QObject):
             sample_rate=self.settings.sample_rate,
             channels=self.settings.channels,
         )
-        self.asr = MlxWhisperASR(
-            model_name=self.settings.whisper_model,
-            language=self.settings.language,
-        )
+        self._asr = None
         self.llm = OllamaTextCleaner(
             model_name=self.settings.ollama_model,
             debug_stream=self.settings.llm_debug_stream,
@@ -172,13 +200,30 @@ class AppController(QObject):
             on_release=self._on_hotkey_released,
         )
         self.hotkey.start()
-        if self.hotkey.using_fallback:
-            self.status_signal.emit("Fn hook unavailable. Fallback to Right Option.")
+        QTimer.singleShot(350, self._notify_hotkey_status_after_start)
+
+    def _notify_hotkey_status_after_start(self) -> None:
+        hotkey = self.hotkey
+        if hotkey is None:
+            return
+        if not hotkey.using_fallback:
+            return
+        if self.settings.hotkey == "fn":
+            self.settings.hotkey = "right_option"
+            self.config_store.save(self.settings)
+            self.settings_updated.emit(self.settings)
+        self.status_signal.emit(
+            "Fn hook unavailable on this macOS setup. "
+            "Switched to Right Option. Hold Right Option to talk."
+        )
 
     def _on_hotkey_pressed(self) -> None:
         if time.monotonic() < self._hotkey_cooldown_until_ts:
             return
         if self._is_processing or self._is_recording:
+            return
+        if not self.is_cloud_mode and not self._get_asr().is_model_available():
+            self.error_signal.emit("__MODEL_NOT_FOUND__")
             return
         try:
             self.recorder.start()
@@ -266,7 +311,7 @@ class AppController(QObject):
         person_terms = extract_person_terms(dictionary_entries)
         asr_prompt = build_asr_initial_prompt(dict_terms)
         asr_start = time.perf_counter()
-        raw_text = self.asr.transcribe(wav_path, initial_prompt=asr_prompt)
+        raw_text = self._get_asr().transcribe(wav_path, initial_prompt=asr_prompt)
         asr_elapsed = time.perf_counter() - asr_start
         print(f"[Talky] ASR elapsed: {asr_elapsed:.2f}s")
         if not raw_text:
@@ -280,6 +325,7 @@ class AppController(QObject):
         final_text = self.llm.clean(
             raw_text=corrected_raw_text,
             dictionary_terms=dict_terms,
+            custom_prompt_template=self.settings.custom_llm_prompt,
         )
         llm_elapsed = time.perf_counter() - llm_start
         print(f"[Talky] LLM elapsed: {llm_elapsed:.2f}s")
@@ -313,11 +359,16 @@ class AppController(QObject):
 
             current_front_app = get_frontmost_app()
             if has_focus_target(current_front_app):
-                self.paster.paste_text(final_text)
+                self.paste_to_front_signal.emit(final_text)
                 self.status_signal.emit("Pasted to current focus target.")
             else:
                 self.show_result_popup_signal.emit(final_text)
                 self.status_signal.emit("No focus target detected. Showing floating panel.")
+        except FileNotFoundError as exc:
+            if "Whisper model path not found" in str(exc):
+                self.error_signal.emit("__MODEL_NOT_FOUND__")
+            else:
+                self.error_signal.emit(f"Processing failed: {exc}")
         except Exception as exc:
             self.error_signal.emit(f"Processing failed: {exc}")
         finally:
@@ -336,7 +387,7 @@ class AppController(QObject):
     def _warm_up_models(self) -> None:
         try:
             warm_asr_start = time.perf_counter()
-            self.asr.warm_up()
+            self._get_asr().warm_up()
             warm_asr_elapsed = time.perf_counter() - warm_asr_start
             print(f"[Talky] Whisper warm-up done: {warm_asr_elapsed:.2f}s")
         except Exception as exc:
