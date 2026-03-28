@@ -97,6 +97,7 @@ def _download_standalone_python() -> tuple[bool, str]:
     Returns (True, python_binary_path) on success, (False, error_detail) on failure.
     """
     import platform
+    import ssl
     import tarfile
     import tempfile
     import urllib.request
@@ -113,6 +114,13 @@ def _download_standalone_python() -> tuple[bool, str]:
     if not url:
         return False, f"no standalone Python {key[0]}.{key[1]} download available"
 
+    # PyInstaller bundles lack system SSL certs; use certifi if available.
+    try:
+        import certifi
+        ssl_ctx = ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        ssl_ctx = ssl.create_default_context()
+
     parent = _STANDALONE_PYTHON_DIR.parent  # ~/.talky
     parent.mkdir(parents=True, exist_ok=True)
 
@@ -124,7 +132,7 @@ def _download_standalone_python() -> tuple[bool, str]:
     tmp_file.close()
     try:
         req = urllib.request.Request(url)
-        with urllib.request.urlopen(req, timeout=180) as resp:  # noqa: S310
+        with urllib.request.urlopen(req, timeout=180, context=ssl_ctx) as resp:  # noqa: S310
             with tmp_path.open("wb") as f:
                 shutil.copyfileobj(resp, f)
 
