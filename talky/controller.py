@@ -586,6 +586,7 @@ class AppController(QObject):
         )
         asr_elapsed = time.perf_counter() - asr_start
         print(f"[Talky] ASR elapsed: {asr_elapsed:.2f}s")
+        print(f"[Talky] ASR text: {raw_text}")
         if not raw_text:
             raise RuntimeError("ASR returned empty text. Please retry.")
         corrected_raw_text = apply_phonetic_dictionary(raw_text, dict_terms)
