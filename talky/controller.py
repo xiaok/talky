@@ -594,6 +594,8 @@ class AppController(QObject):
             self.status_signal.emit("ASR text too short. LLM step skipped.")
             return ""
 
+        self._emit_pipeline_state("post_processing", source="asr_done_llm_starting")
+
         if selected_text_snapshot and looks_like_edit_instruction(corrected_raw_text):
             self.status_signal.emit("Detected edit instruction on selected text.")
             rewritten_text = run_with_timeout(

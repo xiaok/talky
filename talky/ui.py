@@ -165,6 +165,8 @@ _ZH = {
     "live_recording_subtitle": "松开 Fn 结束录音",
     "live_processing_title": "正在识别",
     "live_processing_subtitle": "请稍候，马上粘贴",
+    "live_post_processing_title": "后处理中",
+    "live_post_processing_subtitle": "请稍候，马上粘贴",
 }
 
 
@@ -2450,6 +2452,14 @@ class TrayApp:
                 f"geom={self.live_status_widget.geometry().getRect()}"
             )
             return
+        if state == "post_processing":
+            self.live_status_widget.show_post_processing(locale)
+            append_debug_log(
+                "pipeline_state_render: "
+                f"state=post_processing; after_visible={self.live_status_widget.isVisible()}; "
+                f"geom={self.live_status_widget.geometry().getRect()}"
+            )
+            return
         self.live_status_widget.hide_status()
         append_debug_log(
             "pipeline_state_render: "
@@ -2643,6 +2653,15 @@ class LiveStatusWidget(QWidget):
             "processing",
             _tr(locale, "Recognizing", "live_processing_title"),
             _tr(locale, "Transcribing...", "live_processing_subtitle"),
+            anim_prefix,
+        )
+
+    def show_post_processing(self, locale: str) -> None:
+        anim_prefix = "后处理中" if locale == "zh" else "Post Processing"
+        self._set_state(
+            "post_processing",
+            _tr(locale, "Post Processing", "live_post_processing_title"),
+            _tr(locale, "Post Processing...", "live_post_processing_subtitle"),
             anim_prefix,
         )
 

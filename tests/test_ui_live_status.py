@@ -25,6 +25,17 @@ def test_live_status_widget_shows_recording_and_processing_text():
     assert widget.isVisible()
     assert widget.title.text() == "正在识别"
 
+    widget.show_post_processing("mixed")
+    assert widget.isVisible()
+    assert widget.title.text() == "后处理中"
+
+    widget.hide_status()
+    assert not widget.isVisible()
+
+    widget.show_post_processing("en")
+    assert widget.isVisible()
+    assert widget.title.text() == "Post Processing"
+
     widget.hide_status()
     assert not widget.isVisible()
 
