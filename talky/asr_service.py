@@ -79,11 +79,31 @@ class MlxWhisperASR:
             "(e.g. mlx-community/whisper-large-v3-mlx)."
         )
 
+    def _resolve_local_cache_path(self) -> str:
+        """Resolve model to local cache path to skip HF update check.
+
+        For HF repo IDs, returns the local snapshot path if cached.
+        For local paths, returns the resolved path.
+        Falls back to repo ID if not found in cache.
+        """
+        ref = self._resolve_model_reference()
+        if not ref.startswith(("/", "./", "../", "~")):
+            cache_dir = Path.home() / ".cache" / "huggingface" / "hub"
+            snapshots = cache_dir / f"models--{ref.replace('/', '--')}" / "snapshots"
+            if snapshots.exists():
+                try:
+                    snapshot_dirs = sorted(snapshots.iterdir())
+                    if snapshot_dirs:
+                        return str(snapshot_dirs[-1])
+                except Exception:
+                    pass
+        return ref
+
     def transcribe(self, audio_path: Path, initial_prompt: str) -> str:
         mlx_whisper, _ = self._load_runtime(require_numpy=False)
         audio = self._load_audio_waveform(audio_path)
 
-        model_ref = self._resolve_model_reference()
+        model_ref = self._resolve_local_cache_path()
         kwargs = {"initial_prompt": initial_prompt, "language": self.language}
         try:
             result = mlx_whisper.transcribe(
@@ -99,7 +119,7 @@ class MlxWhisperASR:
     def warm_up(self) -> None:
         mlx_whisper, np = self._load_runtime(require_numpy=True)
 
-        model_ref = self._resolve_model_reference()
+        model_ref = self._resolve_local_cache_path()
         # Use in-memory silent waveform to avoid depending on ffmpeg for warm-up.
         silent = np.zeros(8000, dtype=np.float32)  # 0.5s @ 16k
         kwargs = {"initial_prompt": "", "language": self.language}
